@@ -37,6 +37,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+pub mod openagent;
+
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags, Row};
 use serde_json::{json, Map, Value};
@@ -149,7 +151,88 @@ pub fn session_id(path: &Path) -> String {
 /// identity and lines declaring a different session are skipped as
 /// `projection` — a multi-session JSONL contributes the first session.
 /// `cwd`/`title`/timestamps ride on whatever line carries them.
+/// One `.jsonl` line's session group: its declared session keys, else
+/// the directory-layout uuid the path carries (`brain/<uuid>/x.jsonl`).
+/// Lines resolving to nothing carry no session identity and never
+/// decode — LicoUp's `native_session_id_or_layout` drops them outright.
+fn line_group_id(value: &Value, path: &Path) -> Option<String> {
+    line_session_id(value).or_else(|| {
+        path.components().rev().skip(1).find_map(|component| {
+            let component = component.as_os_str().to_str()?;
+            is_conversation_uuid_component(component).then(|| component.to_string())
+        })
+    })
+}
+
+/// Distinct session groups a `.jsonl` file's lines declare, in
+/// first-seen order — the grouping `parse_jsonl_sessions` applies
+/// across adapters.
+fn jsonl_group_ids(path: &Path) -> Result<Vec<String>> {
+    let file = File::open(path).map_err(Error::io(path))?;
+    let mut groups = Vec::<String>::new();
+    for line in BufReader::new(file).lines() {
+        let line = line.map_err(Error::io(path))?;
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        if let Some(id) = line_group_id(&value, path) {
+            if !groups.contains(&id) {
+                groups.push(id);
+            }
+        }
+    }
+    Ok(groups)
+}
+
+/// Session refs inside a grouped `.jsonl`/`.ndjson` file: one per
+/// declared session group when the file holds more than one — the
+/// same container contract sqlite stores and `sessions[]` documents
+/// follow. A single-group or group-less file yields no refs; it stays
+/// file-addressed so locator identity and whole-file decode apply.
+pub fn jsonl_session_refs(path: &Path) -> Vec<crate::codec::SessionRef> {
+    let Ok(groups) = jsonl_group_ids(path) else {
+        return Vec::new();
+    };
+    if groups.len() < 2 {
+        return Vec::new();
+    }
+    groups
+        .into_iter()
+        .map(|id| crate::codec::SessionRef {
+            path: path.to_path_buf(),
+            key: Some(id.clone()),
+            id,
+            parent: None,
+        })
+        .collect()
+}
+
+/// Decode the lines belonging to one declared session group of a
+/// `.jsonl` file — `key` is a group id from [`jsonl_session_refs`].
+/// Foreign-group and identity-less lines report as `projection` skips;
+/// corrupt lines as `corrupt`.
+pub fn decode_jsonl_session(path: &Path, key: &str, agent: &str) -> Result<Decoded> {
+    decode_jsonl_lines(path, agent, Some(key))
+}
+
+/// Decode a `.jsonl` transcript. The file is a session container: one
+/// declared group decodes as that session, several groups require the
+/// caller to enumerate, and a file whose lines resolve no session
+/// identity at all decodes nothing — every line reports as a
+/// `projection` skip, matching the source reader's drop.
 pub fn decode_jsonl(path: &Path, agent: &str) -> Result<Decoded> {
+    let groups = jsonl_group_ids(path)?;
+    match groups.len() {
+        1 => decode_jsonl_lines(path, agent, Some(&groups[0])),
+        0 => decode_jsonl_lines(path, agent, None),
+        n => Err(Error::Usage(format!(
+            "`{}` holds {n} session groups; enumerate it",
+            path.display()
+        ))),
+    }
+}
+
+fn decode_jsonl_lines(path: &Path, agent: &str, group: Option<&str>) -> Result<Decoded> {
     let file = File::open(path).map_err(Error::io(path))?;
     let mut conversation = Conversation::new(session_id(path));
     conversation.agent = Some(agent.to_string());
@@ -173,13 +256,10 @@ pub fn decode_jsonl(path: &Path, agent: &str) -> Result<Decoded> {
             });
             continue;
         };
-        if let Some(id) = line_session_id(&value) {
-            match &declared_session {
-                None => {
-                    declared_session = Some(id.clone());
-                    conversation.session_id = id;
-                }
-                Some(declared) if *declared != id => {
+        match group {
+            Some(want) => {
+                let in_group = line_group_id(&value, path).is_some_and(|id| id == want);
+                if !in_group {
                     skipped.push(Skipped {
                         line: index,
                         native_type: native_type(&value),
@@ -187,7 +267,38 @@ pub fn decode_jsonl(path: &Path, agent: &str) -> Result<Decoded> {
                     });
                     continue;
                 }
-                _ => {}
+                if declared_session.is_none() {
+                    declared_session = Some(want.to_string());
+                    conversation.session_id = want.to_string();
+                }
+            }
+            None => {
+                // Group-less file: the same identity walk applies — a line
+                // resolving to no session (no declared id, no layout uuid)
+                // never decodes, matching the source reader's drop.
+                let Some(id) = line_group_id(&value, path) else {
+                    skipped.push(Skipped {
+                        line: index,
+                        native_type: native_type(&value),
+                        reason: "projection".to_string(),
+                    });
+                    continue;
+                };
+                match &declared_session {
+                    None => {
+                        declared_session = Some(id.clone());
+                        conversation.session_id = id;
+                    }
+                    Some(declared) if *declared != id => {
+                        skipped.push(Skipped {
+                            line: index,
+                            native_type: native_type(&value),
+                            reason: "projection".to_string(),
+                        });
+                        continue;
+                    }
+                    _ => {}
+                }
             }
         }
         let semantic = normalize_semantic(&native_content_semantic(&value));
@@ -281,6 +392,106 @@ pub fn decode_json_document(path: &Path, agent: &str) -> Result<Decoded> {
     })
 }
 
+/// Document keys whose array items are individually-addressed
+/// sessions — LicoUp's `collect_explicit_json_sessions` container
+/// vocabulary (`sessions`/`conversations`/`chats`/`chatSessions`).
+const EXPLICIT_SESSION_KEYS: &[&str] = &["sessions", "conversations", "chats", "chatSessions"];
+
+/// Session refs inside a `.json` document: one per item in an explicit
+/// `sessions[]`-style array that declares a native session id — the
+/// same container contract sqlite stores follow, applied to the JSON
+/// lane. Any other document yields no refs (one session per file).
+///
+/// The selector is `{container-key}/{session-id}`.
+pub fn json_document_session_refs(path: &Path) -> Vec<crate::codec::SessionRef> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return Vec::new();
+    };
+    let Some(object) = value.as_object() else {
+        return Vec::new();
+    };
+    let mut refs = Vec::new();
+    for key in EXPLICIT_SESSION_KEYS {
+        let Some(Value::Array(items)) = object.get(*key) else {
+            continue;
+        };
+        for item in items {
+            let Some(id) = document_session_id(item).filter(|id| !id.trim().is_empty()) else {
+                continue;
+            };
+            refs.push(crate::codec::SessionRef {
+                id: id.clone(),
+                path: path.to_path_buf(),
+                key: Some(format!("{key}/{id}")),
+                parent: None,
+            });
+        }
+    }
+    refs
+}
+
+/// Decode one item out of a `sessions[]`-style document: the selector
+/// is `{container-key}/{session-id}` from [`json_document_session_refs`].
+/// The item decodes through the same projection a standalone document
+/// gets, under its declared session id.
+pub fn decode_json_document_session(path: &Path, selector: &str, agent: &str) -> Result<Decoded> {
+    let (container, id) = selector.split_once('/').ok_or_else(|| {
+        Error::Usage(format!(
+            "json session selector `{selector}` is not `key/id`"
+        ))
+    })?;
+    let text = std::fs::read_to_string(path).map_err(Error::io(path))?;
+    let line_count = text.lines().count();
+    let value: Value = serde_json::from_str(&text).map_err(|e| Error::Decode {
+        path: path.to_path_buf(),
+        line: e.line(),
+        message: e.to_string(),
+    })?;
+    let Some(item) = value
+        .get(container)
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| document_session_id(item).as_deref() == Some(id))
+        })
+    else {
+        return Err(Error::Usage(format!(
+            "json session `{id}` not found in `{}`",
+            path.display()
+        )));
+    };
+    let mut conversation = Conversation::new(id.to_string());
+    conversation.agent = Some(agent.to_string());
+    conversation.title = document_title(item);
+    conversation.cwd = working_directory(item);
+    conversation.created_at = timestamp_of(item);
+    conversation.updated_at = conversation.created_at.clone();
+    let mut collected = Vec::<(usize, Option<String>, Body)>::new();
+    collect_messages(item, &mut collected);
+    let mut record_lines = Vec::with_capacity(collected.len());
+    for (index, ts, body) in collected {
+        conversation.records.push(Record {
+            id: None,
+            parent: None,
+            ts,
+            ordinal: 0,
+            body,
+        });
+        record_lines.push(index);
+    }
+    finalize(&mut conversation);
+    Ok(Decoded {
+        conversation,
+        record_lines,
+        line_count,
+        skipped: Vec::new(),
+    })
+}
+
 /// Decode a markdown/plaintext transcript (`.md`/`.markdown`/`.txt`/
 /// `.log`) — role-prefixed lines where recognizable, otherwise
 /// paragraph blocks.
@@ -331,6 +542,7 @@ pub fn decode_text(path: &Path, agent: &str) -> Result<Decoded> {
                     None,
                     Body::User {
                         text: prefix_body(trimmed).to_string(),
+                        model: None,
                         attachments: Vec::new(),
                     },
                 );
@@ -403,19 +615,27 @@ pub fn encode_jsonl(conversation: &Conversation) -> Result<Encoded> {
                 if pending.is_empty() {
                     // No assistant context to carry the counters: the
                     // usage rides alone on a message-shaped line.
-                    lines.push(usage_line(rec, data));
+                    lines.push(usage_line(rec, data, &conversation.session_id));
                 } else {
                     pending_usage = Some(data.clone());
                 }
             }
-            Body::User { text, attachments } => {
-                flush_assistant(&mut pending, &mut pending_usage, &mut lines);
+            Body::User {
+                text, attachments, ..
+            } => {
+                flush_assistant(
+                    &mut pending,
+                    &mut pending_usage,
+                    &mut lines,
+                    &conversation.session_id,
+                );
                 let mut content = vec![json!({"type": "text", "text": text})];
                 for attachment in attachments {
                     content.push(attachment.data.clone());
                 }
                 lines.push(
                     json!({
+                        "sessionId": conversation.session_id,
                         "type": "message",
                         "timestamp": rec.ts,
                         "message": {"role": "user", "content": content},
@@ -429,9 +649,15 @@ pub fn encode_jsonl(conversation: &Conversation) -> Result<Encoded> {
                 content,
                 is_error,
             } => {
-                flush_assistant(&mut pending, &mut pending_usage, &mut lines);
+                flush_assistant(
+                    &mut pending,
+                    &mut pending_usage,
+                    &mut lines,
+                    &conversation.session_id,
+                );
                 lines.push(
                     json!({
+                        "sessionId": conversation.session_id,
                         "type": "message",
                         "timestamp": rec.ts,
                         "message": {
@@ -446,10 +672,16 @@ pub fn encode_jsonl(conversation: &Conversation) -> Result<Encoded> {
                 );
             }
             Body::System { subtype, text } => {
-                flush_assistant(&mut pending, &mut pending_usage, &mut lines);
+                flush_assistant(
+                    &mut pending,
+                    &mut pending_usage,
+                    &mut lines,
+                    &conversation.session_id,
+                );
                 projection.adapted.push((rec.ordinal, rec.kind()));
                 lines.push(
                     json!({
+                        "sessionId": conversation.session_id,
                         "type": "system",
                         "timestamp": rec.ts,
                         "subtype": subtype,
@@ -463,7 +695,12 @@ pub fn encode_jsonl(conversation: &Conversation) -> Result<Encoded> {
             }
         }
     }
-    flush_assistant(&mut pending, &mut pending_usage, &mut lines);
+    flush_assistant(
+        &mut pending,
+        &mut pending_usage,
+        &mut lines,
+        &conversation.session_id,
+    );
     Ok(Encoded { lines, projection })
 }
 
@@ -517,10 +754,14 @@ fn bodies_from_value(value: &Value) -> Vec<Body> {
             return bodies;
         }
     }
-    let semantic = native_content_semantic(value);
-    let kind = kind_from_semantic(&semantic);
+    // The envelope dispatches on its normalized role, like the source
+    // reader's `history_message_kind_from_semantic(&role)`: a `type` of
+    // `USER_INPUT` is a user turn, not an event — content-block types
+    // (`tool_use`, `thinking`, …) carry their own dispatch inside
+    // `body_from_block`.
+    let kind = kind_from_semantic(&role);
     if kind != MessageKind::Text {
-        return vec![structured_body(kind, &normalize_semantic(&semantic), value)];
+        return vec![structured_body(kind, &normalize_semantic(&role), value)];
     }
     let Some(text) = extract_text(value) else {
         return Vec::new();
@@ -571,6 +812,7 @@ fn text_body(role: &str, text: String, model: Option<String>, source: &Value) ->
     match role {
         "user" | "human" => Body::User {
             text,
+            model,
             attachments: Vec::new(),
         },
         "agent" => Body::Assistant { text, model },
@@ -601,7 +843,19 @@ fn text_body(role: &str, text: String, model: Option<String>, source: &Value) ->
 /// structured-message half of LicoUp's projection.
 fn structured_body(kind: MessageKind, semantic: &str, value: &Value) -> Body {
     let payload = message_payload(value);
+    let event_record = |semantic: &str| Body::System {
+        subtype: if semantic.is_empty() {
+            "event".to_string()
+        } else {
+            semantic.to_string()
+        },
+        text: extract_text(payload).unwrap_or_else(|| payload.to_string()),
+    };
     match kind {
+        // A semantic-typed event that names no callable is a harness
+        // activity record (`view_file`, `run_command`), not an
+        // invocation — keep the semantic as the record's own subtype.
+        MessageKind::ToolCall if structured_name(payload).is_none() => event_record(semantic),
         MessageKind::ToolCall => Body::ToolCall {
             call_id: call_id(payload),
             name: structured_name(payload).unwrap_or("tool").to_string(),
@@ -612,6 +866,11 @@ fn structured_body(kind: MessageKind, semantic: &str, value: &Value) -> Body {
                 .cloned()
                 .unwrap_or(Value::Null),
         },
+        MessageKind::ToolResult
+            if structured_name(payload).is_none() && call_id(payload).is_none() =>
+        {
+            event_record(semantic)
+        }
         MessageKind::ToolResult => Body::ToolResult {
             call_id: call_id(payload),
             name: structured_name(payload).map(str::to_string),
@@ -1003,7 +1262,10 @@ fn extract_role(value: &Value) -> String {
 /// `content`/`message`/`prompt`/`response` nests, arrays and embedded
 /// JSON strings are walked; tool/metadata-typed objects never leak
 /// their internals as text.
-fn extract_text(value: &Value) -> Option<String> {
+/// `extract_text`: the deepest text a message object contributes —
+/// `text`/`content`/`message`/`parts` keys, embedded JSON-in-string
+/// payloads unwrapped one level.
+pub fn extract_text(value: &Value) -> Option<String> {
     extract_text_iter(value, true)
 }
 
@@ -1433,6 +1695,22 @@ pub fn sqlite_session_keys(path: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Container refs for the probed row groups: `key` is the `table/key`
+/// selector `decode_sqlite` accepts, `id` is the session id the group
+/// decodes to — LicoUp scopes exact reads by that id, never by the
+/// selector, so the two must not collapse into one string.
+pub fn sqlite_session_refs(path: &Path) -> Result<Vec<crate::codec::SessionRef>> {
+    Ok(probe_sqlite(path)?
+        .into_iter()
+        .map(|row| crate::codec::SessionRef {
+            id: row.session_id,
+            path: path.to_path_buf(),
+            key: Some(row.selector),
+            parent: None,
+        })
+        .collect())
+}
+
 /// Decode one sqlite row's blob into a canonical conversation. `key`
 /// is a selector from `sqlite_session_keys`; `None` decodes the first
 /// qualifying row (single-session convenience for whole-file decode).
@@ -1504,17 +1782,15 @@ struct ProbedRow {
 }
 
 /// `parse_generic_sqlite_sessions`: open read-only, probe each
-/// history-candidate table's rows, and keep rows whose text/blob
-/// columns parse to conversation JSON — the row is skipped when no
-/// field yields a message.
+/// history-candidate table's rows, and group the qualifying rows by
+/// their key column — rows sharing a `key`/`id`/`sessionId` value are
+/// one session (LicoUp's `push_grouped_message`), a keyless row is its
+/// own `table:index` group. A row whose fields carry no decodable JSON
+/// still joins its group as a `meta{row}` record holding the raw
+/// field values — the source's "record" card fallback.
 fn probe_sqlite(path: &Path) -> Result<Vec<ProbedRow>> {
     std::fs::metadata(path).map_err(Error::io(path))?;
     let connection = open_sqlite(path)?;
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default()
-        .to_string();
     let mut out = Vec::new();
     for table in sqlite_history_tables(&connection, path)? {
         let query = format!("SELECT * FROM \"{}\"", table.replace('"', "\"\""));
@@ -1534,6 +1810,7 @@ fn probe_sqlite(path: &Path) -> Result<Vec<ProbedRow>> {
             message: e.to_string(),
         })?;
         let mut index = 0usize;
+        let mut groups = Vec::<ProbedRow>::new();
         while let Some(row) = rows.next().map_err(|e| Error::Decode {
             path: path.to_path_buf(),
             line: 0,
@@ -1555,11 +1832,33 @@ fn probe_sqlite(path: &Path) -> Result<Vec<ProbedRow>> {
             if !sqlite_row_may_hold_history(&table, row_key.as_deref(), &row_text) {
                 continue;
             }
-            let mut bodies = Vec::<(usize, Option<String>, Body)>::new();
-            let mut session = None;
-            let mut title = None;
-            let mut cwd = None;
-            let mut created_at = None;
+            let keyed = row_key.is_some();
+            let group_key = row_key.unwrap_or_else(|| row_index.to_string());
+            let group = match groups
+                .iter_mut()
+                .find(|g| g.selector == format!("{table}/{group_key}"))
+            {
+                Some(group) => group,
+                None => {
+                    // LicoUp's session id is the row key itself; a
+                    // keyless row falls back to `table:index`.
+                    groups.push(ProbedRow {
+                        selector: format!("{table}/{group_key}"),
+                        session_id: if keyed {
+                            group_key.clone()
+                        } else {
+                            format!("{table}:{group_key}")
+                        },
+                        field_count: 0,
+                        title: None,
+                        cwd: None,
+                        created_at: None,
+                        bodies: Vec::new(),
+                    });
+                    groups.last_mut().unwrap()
+                }
+            };
+            let mut row_bodies = Vec::<(usize, Option<String>, Body)>::new();
             for (field_index, (_, value)) in fields.iter().enumerate() {
                 let Some(payload) = serde_json::from_str::<Value>(value)
                     .ok()
@@ -1567,40 +1866,55 @@ fn probe_sqlite(path: &Path) -> Result<Vec<ProbedRow>> {
                 else {
                     continue;
                 };
-                if session.is_none() {
-                    session = document_session_id(&payload);
+                if group.session_id == group_key
+                    || group.session_id == format!("{table}:{group_key}")
+                {
+                    if let Some(declared) = document_session_id(&payload) {
+                        group.session_id = declared;
+                    }
                 }
-                if title.is_none() {
-                    title = document_title(&payload);
+                if group.title.is_none() {
+                    group.title = document_title(&payload);
                 }
-                if cwd.is_none() {
-                    cwd = working_directory(&payload);
+                if group.cwd.is_none() {
+                    group.cwd = working_directory(&payload);
                 }
-                if created_at.is_none() {
-                    created_at = timestamp_of(&payload);
+                if group.created_at.is_none() {
+                    group.created_at = timestamp_of(&payload);
                 }
                 let mut collected = Vec::<(usize, Option<String>, Body)>::new();
                 collect_messages(&payload, &mut collected);
-                bodies.extend(
+                row_bodies.extend(
                     collected
                         .into_iter()
                         .map(|(_, ts, body)| (field_index, ts, body)),
                 );
             }
-            if bodies.is_empty() {
-                continue;
+            let line = group.field_count;
+            group.field_count += fields.len();
+            if row_bodies.is_empty() {
+                // The source emits a "record" card for rows with no
+                // decodable message — a `meta{row}` carrying the raw
+                // field values.
+                let raw: serde_json::Map<String, Value> = fields
+                    .iter()
+                    .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+                    .collect();
+                group.bodies.push((
+                    line,
+                    None,
+                    Body::Meta {
+                        subtype: "row".to_string(),
+                        data: Value::Object(raw),
+                    },
+                ));
+            } else {
+                for (field, ts, body) in row_bodies {
+                    group.bodies.push((line + field, ts, body));
+                }
             }
-            let key = row_key.unwrap_or_else(|| row_index.to_string());
-            out.push(ProbedRow {
-                selector: format!("{table}/{key}"),
-                session_id: session.unwrap_or_else(|| format!("{stem}:{table}:{key}")),
-                field_count: fields.len(),
-                title,
-                cwd,
-                created_at,
-                bodies,
-            });
         }
+        out.extend(groups);
     }
     Ok(out)
 }
@@ -1731,7 +2045,12 @@ fn extract_json_from_text(text: &str) -> Option<Value> {
 /// Emit one assistant `message` line for a run of assistant-side
 /// records: text/thinking/toolCall become `content` blocks, a queued
 /// `meta{usage}` lands on the message's `usage` field.
-fn flush_assistant(pending: &mut Vec<&Record>, usage: &mut Option<Value>, lines: &mut Vec<String>) {
+fn flush_assistant(
+    pending: &mut Vec<&Record>,
+    usage: &mut Option<Value>,
+    lines: &mut Vec<String>,
+    session_id: &str,
+) {
     if pending.is_empty() {
         return;
     }
@@ -1761,6 +2080,7 @@ fn flush_assistant(pending: &mut Vec<&Record>, usage: &mut Option<Value>, lines:
         .collect();
     lines.push(
         json!({
+            "sessionId": session_id,
             "type": "message",
             "timestamp": pending.first().and_then(|rec| rec.ts.clone()),
             "message": {
@@ -1778,8 +2098,9 @@ fn flush_assistant(pending: &mut Vec<&Record>, usage: &mut Option<Value>, lines:
 /// A usage payload with no assistant message to ride on still lands in
 /// message shape — an empty-content assistant line the decoder reads
 /// back as `meta{usage}`.
-fn usage_line(record: &Record, usage: &Value) -> String {
+fn usage_line(record: &Record, usage: &Value, session_id: &str) -> String {
     json!({
+        "sessionId": session_id,
         "type": "message",
         "timestamp": record.ts,
         "message": {"role": "assistant", "content": [], "usage": usage},
@@ -1856,19 +2177,19 @@ mod tests {
         r#"{"type":"session","id":"sess-42","cwd":"/synthetic/proj","timestamp":"2026-01-01T10:00:00Z"}"#,
         "\n",
         // plain role/text message with an epoch-millis timestamp.
-        r#"{"role":"user","text":"hello agent","timestamp":1767261601000}"#,
+        r#"{"sessionId":"sess-42","role":"user","text":"hello agent","timestamp":1767261601000}"#,
         "\n",
         // assistant message: content blocks fan out thinking+text+toolCall, usage rides along.
-        r#"{"type":"message","timestamp":"2026-01-01T10:00:02Z","message":{"role":"assistant","model":"synthetic-model","content":[{"type":"thinking","thinking":"pondering"},{"type":"text","text":"working on it"},{"type":"toolCall","id":"call-1","name":"fake_tool","arguments":{"arg":1}}],"usage":{"promptTokens":10,"completionTokens":5}}}"#,
+        r#"{"sessionId":"sess-42","type":"message","timestamp":"2026-01-01T10:00:02Z","message":{"role":"assistant","model":"synthetic-model","content":[{"type":"thinking","thinking":"pondering"},{"type":"text","text":"working on it"},{"type":"toolCall","id":"call-1","name":"fake_tool","arguments":{"arg":1}}],"usage":{"promptTokens":10,"completionTokens":5}}}"#,
         "\n",
         // toolResult-shaped message.
-        r#"{"type":"message","timestamp":"2026-01-01T10:00:03Z","message":{"role":"toolResult","toolCallId":"call-1","content":"done","isError":false}}"#,
+        r#"{"sessionId":"sess-42","type":"message","timestamp":"2026-01-01T10:00:03Z","message":{"role":"toolResult","toolCallId":"call-1","content":"done","isError":false}}"#,
         "\n",
         // a typed native event → a system record.
-        r#"{"type":"telemetry","timestamp":"2026-01-01T10:00:04Z","payload":{"x":1}}"#,
+        r#"{"sessionId":"sess-42","type":"telemetry","timestamp":"2026-01-01T10:00:04Z","payload":{"x":1}}"#,
         "\n",
         // a message with no text or content → projection skip.
-        r#"{"type":"message","message":{"role":"assistant"}}"#,
+        r#"{"sessionId":"sess-42","type":"message","message":{"role":"assistant"}}"#,
         "\n",
         // corrupt line.
         "not json at all\n",
@@ -1880,7 +2201,9 @@ mod tests {
     #[test]
     fn jsonl_decodes_mixed_shapes_with_blocks_usage_and_skips() {
         let path = write_temp("mixed.jsonl", JSONL);
-        let decoded = decode_jsonl(&path, "synthetic").unwrap();
+        // Two declared groups: enumerate and decode `sess-42`; the
+        // `sess-99` line stays a foreign-session projection skip.
+        let decoded = decode_jsonl_session(&path, "sess-42", "synthetic").unwrap();
         let conv = &decoded.conversation;
 
         assert_eq!(decoded.line_count, 8);
@@ -1894,14 +2217,14 @@ mod tests {
         assert_eq!(
             kinds,
             vec![
-                RecordKind::System,     // the {"type":"session"} header event
-                RecordKind::User,       // plain role/text line
-                RecordKind::Reasoning,  // thinking block
-                RecordKind::Assistant,  // text block
-                RecordKind::ToolCall,   // toolCall block
-                RecordKind::Meta,       // usage on the assistant line
-                RecordKind::ToolResult, // toolResult message
-                RecordKind::System      // the telemetry event
+                RecordKind::System,    // the {"type":"session"} header event
+                RecordKind::User,      // plain role/text line
+                RecordKind::Reasoning, // thinking block
+                RecordKind::Assistant, // text block
+                RecordKind::ToolCall,  // toolCall block
+                RecordKind::Meta,      // usage on the assistant line
+                RecordKind::System,    // role:toolResult envelopes fold to a nameless tool event
+                RecordKind::System     // the telemetry event
             ]
         );
         assert_eq!(decoded.record_lines, vec![0, 1, 2, 2, 2, 2, 3, 4]);
@@ -1945,13 +2268,12 @@ mod tests {
             other => panic!("expected usage meta, got {other:?}"),
         }
         match &conv.records[6].body {
-            Body::ToolResult {
-                call_id, content, ..
-            } => {
-                assert_eq!(call_id.as_deref(), Some("call-1"));
-                assert_eq!(content, "done");
+            Body::System { subtype, .. } => {
+                // role:"toolResult" normalizes to the "tool" role — a
+                // nameless envelope is a tool event record, not a call.
+                assert_eq!(subtype, "tool");
             }
-            other => panic!("expected tool result, got {other:?}"),
+            other => panic!("expected tool event, got {other:?}"),
         }
         // Ordinals are assigned in record order.
         for (i, rec) in conv.records.iter().enumerate() {
@@ -2007,9 +2329,14 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            vec![RecordKind::User, RecordKind::Assistant, RecordKind::Meta]
+            vec![
+                RecordKind::User,
+                RecordKind::Assistant,
+                RecordKind::System,
+                RecordKind::Meta
+            ]
         );
-        assert_eq!(decoded.record_lines, vec![0, 1, 2]);
+        assert_eq!(decoded.record_lines, vec![0, 1, 2, 2]);
         std::fs::remove_file(&path).ok();
     }
 
@@ -2049,7 +2376,12 @@ mod tests {
 
     #[test]
     fn dispatch_picks_by_extension_and_rejects_the_rest() {
-        let jsonl = write_temp("dispatch.ndjson", r#"{"role":"user","text":"x"}"#);
+        // A `.jsonl` line decodes only inside a resolvable session —
+        // no declared id, no layout uuid means the line never lands.
+        let jsonl = write_temp(
+            "dispatch.ndjson",
+            r#"{"sessionId":"s-1","role":"user","text":"x"}"#,
+        );
         let json = write_temp("dispatch.json", r#"[{"role":"user","text":"x"}]"#);
         let text = write_temp("dispatch.log", "user: x\n");
         for path in [&jsonl, &json, &text] {
@@ -2128,6 +2460,7 @@ mod tests {
                 ordinal: 0,
                 body: Body::User {
                     text: "question".into(),
+                    model: None,
                     attachments: Vec::new(),
                 },
             },
@@ -2224,7 +2557,9 @@ mod tests {
                 RecordKind::Assistant,
                 RecordKind::ToolCall,
                 RecordKind::Meta,
-                RecordKind::ToolResult,
+                // A `role:"toolResult"` envelope reads as a tool-call
+                // semantic — the name keeps it a call record here.
+                RecordKind::ToolCall,
                 RecordKind::System,
             ]
         );
@@ -2385,17 +2720,18 @@ mod tests {
             );
         }
 
-        // The key-less blob table decodes under its row-index selector.
+        // The key-less blob table decodes under its row-index selector —
+        // LicoUp's `table:index` identity.
         let blob = decode_sqlite(&path, Some("chat_blobs/0"), "synthetic").unwrap();
-        assert_eq!(blob.conversation.session_id, "fixture:chat_blobs:0");
+        assert_eq!(blob.conversation.session_id, "chat_blobs:0");
         match &blob.conversation.records[0].body {
             Body::User { text, .. } => assert_eq!(text, "loose"),
             other => panic!("expected user, got {other:?}"),
         }
 
-        // Bare-array blob lands the stem:table:key fallback session id.
+        // A keyed row carries its key as the session id.
         let array = decode_sqlite(&path, Some("session_data/d1"), "synthetic").unwrap();
-        assert_eq!(array.conversation.session_id, "fixture:session_data:d1");
+        assert_eq!(array.conversation.session_id, "d1");
         assert_eq!(array.conversation.records[0].kind(), RecordKind::Assistant);
 
         // Unknown selector → Usage; unreadable and non-sqlite files error.

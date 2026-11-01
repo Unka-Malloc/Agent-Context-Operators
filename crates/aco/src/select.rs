@@ -94,6 +94,7 @@ mod tests {
                 ordinal: 0,
                 body: Body::User {
                     text: "hello".into(),
+                    model: None,
                     attachments: vec![],
                 },
             },

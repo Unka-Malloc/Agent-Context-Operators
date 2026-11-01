@@ -21,6 +21,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use aco::codec::SessionRef;
 use aco::codec::{Capability, CapabilityMatrix, Codec, Decoded, Encoded, Skipped};
 use aco::model::{Body, Conversation, Record};
 use aco::store::HistoryRoot;
@@ -60,6 +61,13 @@ impl Default for KimiCodeCodec {
 /// The registered codec instance.
 pub fn codec() -> &'static dyn Codec {
     &KimiCodeCodec
+}
+
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 impl Codec for KimiCodeCodec {
@@ -127,7 +135,12 @@ impl Codec for KimiCodeCodec {
             .collect()
     }
 
+    /// `.json` artifacts decode through the shared document lane;
+    /// kimi wire transcripts are `.jsonl`.
     fn decode(&self, path: &Path) -> Result<Decoded> {
+        if extension_of(path) == "json" {
+            return aco::generic::decode_json_document(path, "kimicode");
+        }
         let file = File::open(path).map_err(Error::io(path))?;
         let mut conv = Conversation::new(native_session_id(path));
         conv.agent = Some("kimicode".to_string());
@@ -172,6 +185,7 @@ impl Codec for KimiCodeCodec {
                             timestamp(&value),
                             Body::User {
                                 text,
+                                model: None,
                                 attachments: Vec::new(),
                             },
                         );
@@ -203,6 +217,7 @@ impl Codec for KimiCodeCodec {
                                     ts,
                                     Body::User {
                                         text,
+                                        model: None,
                                         attachments: Vec::new(),
                                     },
                                 ),
@@ -421,6 +436,50 @@ impl Codec for KimiCodeCodec {
     /// Emit wire-shaped rows: prompts and loop events. `usage` meta rows go
     /// back as `usage.record`; other meta rows ride the store's `metadata`
     /// envelope with their subtype carried through.
+    /// A `.json` document holding `sessions[]` items or a `.jsonl`
+    /// transcript declaring several session groups enumerates one ref
+    /// per unit; everything else stays one session per file.
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        match extension_of(path).as_str() {
+            "json" => {
+                let refs = aco::generic::json_document_session_refs(path);
+                if !refs.is_empty() {
+                    return Ok(refs);
+                }
+            }
+            "jsonl" | "ndjson" => {
+                let refs = aco::generic::jsonl_session_refs(path);
+                if !refs.is_empty() {
+                    return Ok(refs);
+                }
+            }
+            _ => {}
+        }
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+            parent: None,
+        }])
+    }
+
+    /// `key = Some` selects one container unit; `key = None` decodes
+    /// the file.
+    fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
+        match session.key.as_deref() {
+            None => self.decode(&session.path),
+            Some(key) => match extension_of(&session.path).as_str() {
+                "json" => {
+                    aco::generic::decode_json_document_session(&session.path, key, "kimicode")
+                }
+                "jsonl" | "ndjson" => {
+                    aco::generic::decode_jsonl_session(&session.path, key, "kimicode")
+                }
+                _ => self.decode(&session.path),
+            },
+        }
+    }
+
     fn encode(&self, conversation: &Conversation) -> Result<Encoded> {
         let (kept, projection) = self.project(conversation);
         let mut lines = Vec::with_capacity(kept.len());

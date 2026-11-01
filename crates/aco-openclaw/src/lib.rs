@@ -99,30 +99,48 @@ impl Codec for OpenClawCodec {
     }
 
     /// A database file enumerates one [`SessionRef`] per stored session
-    /// key; every other accepted artifact stays one session per file.
+    /// key; a `.json` document with an explicit `sessions[]` array
+    /// enumerates one ref per session item; every other accepted
+    /// artifact stays one session per file.
     fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
-        if SQLITE_EXTENSIONS.contains(&extension_of(path).as_str()) && !rejected_file_name(path) {
-            return Ok(aco::generic::sqlite_session_keys(path)?
-                .into_iter()
-                .map(|key| SessionRef {
-                    id: key.clone(),
-                    path: path.to_path_buf(),
-                    key: Some(key),
-                })
-                .collect());
+        let ext = extension_of(path);
+        if SQLITE_EXTENSIONS.contains(&ext.as_str()) && !rejected_file_name(path) {
+            return aco::generic::sqlite_session_refs(path);
+        }
+        if ext == "json" {
+            let refs = aco::generic::json_document_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        if matches!(ext.as_str(), "jsonl" | "ndjson") {
+            let refs = aco::generic::jsonl_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
         }
         Ok(vec![SessionRef {
             id: self.session_id(path),
             path: path.to_path_buf(),
             key: None,
+            parent: None,
         }])
     }
 
-    /// `key = Some(..)` reads that container session; `key = None`
-    /// falls through to the file decoder.
+    /// `key = Some(..)` reads that container session — a sqlite row
+    /// group or a `sessions[]` item; `key = None` falls through to the
+    /// file decoder.
     fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
         match &session.key {
-            Some(key) => aco::generic::decode_sqlite(&session.path, Some(key), self.id()),
+            Some(key) => match extension_of(&session.path).as_str() {
+                ext if SQLITE_EXTENSIONS.contains(&ext) => {
+                    aco::generic::decode_sqlite(&session.path, Some(key), self.id())
+                }
+                "jsonl" | "ndjson" => {
+                    aco::generic::decode_jsonl_session(&session.path, key, self.id())
+                }
+                _ => aco::generic::decode_json_document_session(&session.path, key, self.id()),
+            },
             None => self.decode(&session.path),
         }
     }

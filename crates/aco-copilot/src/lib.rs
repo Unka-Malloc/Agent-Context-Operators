@@ -213,6 +213,7 @@ impl Codec for CopilotCodec {
                     id: self.session_id(&file),
                     path: file,
                     key: None,
+                    parent: None,
                 });
             }
         }
@@ -221,14 +222,32 @@ impl Codec for CopilotCodec {
 
     /// Row-level sessions a container file holds — the hook a host that
     /// walks files itself uses to reach `chatSessions`/`sessions` rows.
+    /// Row-level sessions a container file holds — sqlite stores
+    /// enumerate their `chatSessions`/`sessions` rows, a `.json`
+    /// document its `sessions[]` items, a `.jsonl` transcript its
+    /// declared session groups.
     fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
         if sqlite_extension(path) {
             return enumerate_sqlite(path, true);
+        }
+        let ext = file_extension(path);
+        if ext == "json" {
+            let refs = aco::generic::json_document_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        if matches!(ext.as_str(), "jsonl" | "ndjson") {
+            let refs = aco::generic::jsonl_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
         }
         Ok(vec![SessionRef {
             id: self.session_id(path),
             path: path.to_path_buf(),
             key: None,
+            parent: None,
         }])
     }
 
@@ -278,9 +297,15 @@ impl Codec for CopilotCodec {
                     })?;
                 self.decode(&events)
             }
-            Some(key) => Err(Error::Usage(format!(
-                "unrecognized copilot row key `{key}`"
-            ))),
+            Some(key) => match file_extension(&session.path).as_str() {
+                "json" => aco::generic::decode_json_document_session(&session.path, key, "copilot"),
+                "jsonl" | "ndjson" => {
+                    aco::generic::decode_jsonl_session(&session.path, key, "copilot")
+                }
+                _ => Err(Error::Usage(format!(
+                    "unrecognized copilot row key `{key}`"
+                ))),
+            },
         }
     }
 
@@ -296,14 +321,11 @@ impl Codec for CopilotCodec {
             };
         }
         let raw = std::fs::read_to_string(path).map_err(Error::io(path))?;
-        if let Some(items) = session_document(&raw) {
-            return match items.len() {
-                1 => Ok(project_chat_session(&items[0], 0)),
-                n => Err(Error::Usage(format!(
-                    "{}: document holds {n} copilot sessions — address one by id",
-                    path.display()
-                ))),
-            };
+        // `.json` documents decode through the shared lane — LicoUp's
+        // generic `sessions[]`/`chatSessions[]` container semantics
+        // cover every copilot JSON artifact shape.
+        if file_extension(path) == "json" {
+            return aco::generic::decode_json_document(path, "copilot");
         }
         decode_transcript(path, &raw)
     }
@@ -345,7 +367,10 @@ impl Codec for CopilotCodec {
                 }
                 RecordKind::User => {
                     flush_assistant(&mut pending, &mut lines);
-                    if let Body::User { text, attachments } = &rec.body {
+                    if let Body::User {
+                        text, attachments, ..
+                    } = &rec.body
+                    {
                         lines.push(
                             json!({
                                 "type": "user.message",
@@ -660,7 +685,11 @@ fn decode_transcript(path: &Path, raw: &str) -> Result<Decoded> {
                                 .and_then(Value::as_str)
                                 .map(str::to_string),
                             ts.clone(),
-                            Body::User { text, attachments },
+                            Body::User {
+                                text,
+                                model: None,
+                                attachments,
+                            },
                         );
                     }
                 }
@@ -977,6 +1006,7 @@ fn project_chat_session(item: &Value, index: usize) -> Decoded {
                     ts.clone(),
                     Body::User {
                         text,
+                        model: None,
                         attachments: Vec::new(),
                     },
                 );
@@ -1101,6 +1131,7 @@ fn enumerate_sqlite(path: &Path, include_index_rows: bool) -> Result<Vec<Session
                 id: chat_session_id(item).unwrap_or_else(|| format!("chatSessions-{index}")),
                 path: path.to_path_buf(),
                 key: Some(format!("{CHAT_SESSION_KEY_PREFIX}{index}")),
+                parent: None,
             })
             .collect());
     }
@@ -1135,6 +1166,7 @@ fn enumerate_sqlite(path: &Path, include_index_rows: bool) -> Result<Vec<Session
                 key: Some(format!("{SESSION_INDEX_KEY_PREFIX}{id}")),
                 id,
                 path: path.to_path_buf(),
+                parent: None,
             });
         }
         return Ok(sessions);
@@ -1257,29 +1289,18 @@ fn session_dir_name(path: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
+fn file_extension(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
 fn sqlite_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| ["sqlite", "sqlite3", "db", "vscdb"].contains(&e.to_ascii_lowercase().as_str()))
         .unwrap_or(false)
-}
-
-/// A whole-file JSON document holding a sessions array
-/// (`{"chatSessions":[…]}` and friends) — the same containers the
-/// ItemTable document carries.
-fn session_document(raw: &str) -> Option<Vec<Value>> {
-    let trimmed = raw.trim();
-    if !trimmed.starts_with('{') {
-        return None;
-    }
-    let value = serde_json::from_str::<Value>(trimmed).ok()?;
-    let object = value.as_object()?;
-    for key in ["chatSessions", "sessions", "conversations", "chats"] {
-        if let Some(items) = object.get(key).and_then(Value::as_array) {
-            return Some(items.clone());
-        }
-    }
-    None
 }
 
 /// The session's own identifier on a `chatSessions` item — the store's

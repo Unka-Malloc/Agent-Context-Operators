@@ -678,7 +678,11 @@ fn project_user(conversation: &mut Conversation, data: &Value, ts: Option<String
     let body = if role_assistant {
         Body::Assistant { text, model: None }
     } else {
-        Body::User { text, attachments }
+        Body::User {
+            text,
+            model: None,
+            attachments,
+        }
     };
     conversation.records.push(Record {
         id,
@@ -742,7 +746,11 @@ fn non_empty(value: Option<&Value>) -> Option<String> {
 /// The native `data` object a canonical record encodes to.
 fn record_event_data(rec: &Record) -> Value {
     match &rec.body {
-        Body::User { text, attachments } => {
+        Body::User {
+            text,
+            model: None,
+            attachments,
+        } => {
             let mut content = vec![json!({ "type": "text", "text": text })];
             for attachment in attachments {
                 content.push(json!({ "type": attachment.kind, "data": attachment.data }));

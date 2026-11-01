@@ -221,10 +221,40 @@ impl Codec for CursorCodec {
                     id: self.session_id(&file),
                     path: file,
                     key: None,
+                    parent: None,
                 });
             }
         }
         Ok(sessions)
+    }
+
+    /// Container contract: a discovered sqlite store enumerates its
+    /// session rows (`cursorDiskKV` composers, OpenAgent `session` rows,
+    /// a `blobs` chat, or probed `table/key` groups); every other file
+    /// stays one session per file.
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        if is_sqlite_file(path) {
+            return Ok(container_session_refs(path));
+        }
+        let ext = file_extension(path);
+        if ext == "json" {
+            let refs = aco::generic::json_document_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        if matches!(ext.as_str(), "jsonl" | "ndjson") {
+            let refs = aco::generic::jsonl_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+            parent: None,
+        }])
     }
 
     /// `key = Some` reads one row out of a container store;
@@ -233,15 +263,39 @@ impl Codec for CursorCodec {
         let Some(key) = session.key.as_deref() else {
             return self.decode(&session.path);
         };
+        match file_extension(&session.path).as_str() {
+            "json" => {
+                return aco::generic::decode_json_document_session(&session.path, key, "cursor")
+            }
+            "jsonl" | "ndjson" => {
+                return aco::generic::decode_jsonl_session(&session.path, key, "cursor")
+            }
+            _ => {}
+        }
         let connection = open_read_only(&session.path).ok_or_else(|| Error::Decode {
             path: session.path.clone(),
             line: 0,
             message: "sqlite store does not open read-only".into(),
         })?;
         if let Some(composer_id) = key.strip_prefix("composerData:") {
-            return decode_composer_session(&connection, &session.path, composer_id, Some(key));
+            let known = composer_rows(&connection)
+                .into_iter()
+                .map(|composer| composer.id)
+                .collect();
+            return decode_composer_session(
+                &connection,
+                &session.path,
+                composer_id,
+                Some(key),
+                &known,
+            );
         }
-        decode_openagent_session(&connection, &session.path, key)
+        if let Some(decoded) =
+            aco::generic::openagent::decode(&connection, &session.path, key, "cursor")?
+        {
+            return Ok(decoded);
+        }
+        aco::generic::decode_sqlite(&session.path, Some(key), "cursor")
     }
 
     /// Single-file decode: JSONL/NDJSON transcripts, whole-document JSON,
@@ -253,7 +307,10 @@ impl Codec for CursorCodec {
         }
         let ext = file_extension(path);
         match ext.as_str() {
-            "json" => decode_json_document(path),
+            // `.json` documents decode through the shared lane —
+            // `sessions[]` containers and single-session documents
+            // alike are generic semantics, not cursor format knowledge.
+            "json" => aco::generic::decode_json_document(path, "cursor"),
             _ => decode_transcript(path),
         }
     }
@@ -436,8 +493,8 @@ fn container_session_refs(path: &Path) -> Vec<SessionRef> {
     if sqlite_table_exists(&connection, "cursorDiskKV") {
         return composer_session_refs(&connection, path);
     }
-    if openagent_schema(&connection) {
-        return openagent_session_refs(&connection, path);
+    if let Some(refs) = aco::generic::openagent::session_refs(&connection, path) {
+        return refs;
     }
     if sqlite_table_exists(&connection, "blobs") {
         // One `store.db` is one chat: file-level addressing.
@@ -445,9 +502,12 @@ fn container_session_refs(path: &Path) -> Vec<SessionRef> {
             id: cli_store_session_id(path),
             path: path.to_path_buf(),
             key: None,
+            parent: None,
         }];
     }
-    Vec::new()
+    // Unknown sqlite layouts probe the generic row-grouping rules —
+    // `ItemTable` key/value stores and friends still enumerate.
+    aco::generic::sqlite_session_refs(path).unwrap_or_default()
 }
 
 /// The session id a `store.db` carries: its parent directory name.
@@ -482,18 +542,6 @@ fn sqlite_table_exists(connection: &Connection, table: &str) -> bool {
             |_| Ok(()),
         )
         .is_ok()
-}
-
-fn sqlite_table_columns(
-    connection: &Connection,
-    table: &str,
-) -> std::result::Result<std::collections::HashSet<String>, rusqlite::Error> {
-    // Table names at every call site are compile-time constants.
-    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
-    let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect();
-    columns
 }
 
 fn sqlite_value_text(value: ValueRef<'_>) -> Option<String> {
@@ -545,6 +593,7 @@ struct ComposerMeta {
     id: String,
     key: String,
     bubble_ids: Vec<String>,
+    parent: Option<String>,
 }
 
 /// One [`SessionRef`] per composer that carries at least one message
@@ -560,6 +609,7 @@ fn composer_session_refs(connection: &Connection, path: &Path) -> Vec<SessionRef
             id: composer.id.clone(),
             path: path.to_path_buf(),
             key: Some(composer.key),
+            parent: composer.parent,
         })
         .collect()
 }
@@ -619,10 +669,17 @@ fn composer_rows(connection: &Connection) -> Vec<ComposerMeta> {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let parent = json
+            .pointer("/subagentInfo/parentComposerId")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
         composers.push(ComposerMeta {
             id,
             key,
             bubble_ids,
+            parent,
         });
     }
     composers
@@ -781,6 +838,7 @@ fn decode_composer_session(
     path: &Path,
     composer_id: &str,
     key: Option<&str>,
+    known_composers: &std::collections::BTreeSet<String>,
 ) -> Result<Decoded> {
     let row_key = key
         .map(str::to_string)
@@ -819,28 +877,48 @@ fn decode_composer_session(
     let mut skipped = Vec::new();
 
     // Delegated lineage is part of session ancestry — a meta record keeps
-    // it without collapsing the session into its parent.
-    if let Some(info) = composer.get("subagentInfo") {
-        if let Some(parent) = info
-            .get("parentComposerId")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-        {
-            push_record(
-                &mut records,
-                &mut record_lines,
-                0,
-                None,
-                Body::Meta {
-                    subtype: "subagent-lineage".to_string(),
-                    data: json!({
-                        "parentSessionId": parent,
-                        "subagentTypeName": info.get("subagentTypeName"),
-                    }),
-                },
-            );
+    // it without collapsing the session into its parent. A parent pointer
+    // the store cannot resolve (the parent composer row is gone) leaves
+    // the session a plain root, never a delegated marker.
+    let mut session_facts = serde_json::Map::new();
+    session_facts.insert("model".to_string(), json!(model));
+    let parent = composer
+        .get("subagentInfo")
+        .and_then(|info| info.get("parentComposerId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && known_composers.contains(*v))
+        .map(str::to_string);
+    if let Some(parent) = parent {
+        let info = composer.get("subagentInfo").unwrap_or(&Value::Null);
+        session_facts.insert("parentSessionId".to_string(), json!(parent));
+        if let Some(kind) = info.get("subagentTypeName").and_then(Value::as_str) {
+            session_facts.insert("subagentTypeName".to_string(), json!(kind));
         }
+        if let Some(title) = composer.get("name").and_then(Value::as_str) {
+            session_facts.insert("subagentTitle".to_string(), json!(title));
+        }
+        push_record(
+            &mut records,
+            &mut record_lines,
+            0,
+            None,
+            Body::Meta {
+                subtype: "subagent-lineage".to_string(),
+                data: Value::Object(session_facts),
+            },
+        );
+    } else {
+        push_record(
+            &mut records,
+            &mut record_lines,
+            0,
+            None,
+            Body::Meta {
+                subtype: "session-agent".to_string(),
+                data: Value::Object(session_facts),
+            },
+        );
     }
 
     let mut bubble_ids = composer
@@ -935,12 +1013,16 @@ fn project_bubble(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+    // A bubble's own model name wins; the "default" placeholder defers
+    // to the composer's declared model (selectedModels first).
     let model = bubble
         .pointer("/modelInfo/modelName")
         .and_then(Value::as_str)
         .or_else(|| bubble.get("modelName").and_then(Value::as_str))
         .or_else(|| bubble.get("model").and_then(Value::as_str))
-        .map(normalize_model_name)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("default"))
+        .map(str::to_string)
         .unwrap_or_else(|| fallback_model.to_string());
     let usage = bubble.get("tokenCount").filter(|u| u.is_object());
     let attachments = bubble_attachments(bubble);
@@ -956,6 +1038,7 @@ fn project_bubble(
     let body = if role == "user" {
         Body::User {
             text: text.clone(),
+            model: Some(model.clone()),
             attachments,
         }
     } else {
@@ -980,7 +1063,7 @@ fn project_bubble(
             ts,
             Body::Meta {
                 subtype: "usage".to_string(),
-                data: json!({"tokenCount": usage, "model": model}),
+                data: json!({"usage": usage, "model": model}),
             },
         );
     }
@@ -1298,7 +1381,15 @@ fn project_store_blob(
                 }
                 let text = text_parts.join("\n");
                 if !text.trim().is_empty() || !attachments.is_empty() {
-                    push(conversation, record_lines, Body::User { text, attachments });
+                    push(
+                        conversation,
+                        record_lines,
+                        Body::User {
+                            text,
+                            model: None,
+                            attachments,
+                        },
+                    );
                 }
             }
             _ => {
@@ -1308,6 +1399,7 @@ fn project_store_blob(
                         record_lines,
                         Body::User {
                             text,
+                            model: None,
                             attachments: Vec::new(),
                         },
                     );
@@ -1459,695 +1551,6 @@ fn meta_record(line: usize, subtype: &str, data: Value) -> Record {
     }
 }
 
-// ---------------------------------------------------------------------------
-// OpenAgent sqlite (`session`/`message`/`part` tables)
-// ---------------------------------------------------------------------------
-
-fn openagent_schema(connection: &Connection) -> bool {
-    sqlite_table_exists(connection, "session")
-        && sqlite_table_exists(connection, "message")
-        && sqlite_table_exists(connection, "part")
-}
-
-/// Columns the session projection can use when the store happens to have
-/// them; `id` is the only one every schema must carry.
-const OPENAGENT_SESSION_COLUMNS: [&str; 14] = [
-    "id",
-    "title",
-    "directory",
-    "path",
-    "agent",
-    "model",
-    "time_created",
-    "time_updated",
-    "tokens_input",
-    "tokens_output",
-    "tokens_reasoning",
-    "tokens_cache_read",
-    "tokens_cache_write",
-    "parent_id",
-];
-
-struct OpenAgentSessionMeta {
-    id: String,
-    title: Option<String>,
-    directory: Option<String>,
-    path: Option<String>,
-    agent: Option<String>,
-    model: Option<String>,
-    created_at: Option<String>,
-    updated_at: Option<String>,
-    usage: Option<Value>,
-    parent_id: Option<String>,
-}
-
-fn openagent_session_refs(connection: &Connection, path: &Path) -> Vec<SessionRef> {
-    openagent_session_rows(connection)
-        .into_iter()
-        .filter(|meta| openagent_session_has_messages(connection, &meta.id))
-        .map(|meta| SessionRef {
-            path: path.to_path_buf(),
-            key: Some(meta.id.clone()),
-            id: meta.id,
-        })
-        .collect()
-}
-
-fn openagent_session_has_messages(connection: &Connection, session_id: &str) -> bool {
-    sqlite_table_columns(connection, "message")
-        .map(|cols| cols.contains("session_id"))
-        .unwrap_or(false)
-        && connection
-            .query_row(
-                "SELECT 1 FROM message WHERE session_id=?1 LIMIT 1",
-                [session_id],
-                |_| Ok(()),
-            )
-            .is_ok()
-}
-
-fn openagent_session_rows(connection: &Connection) -> Vec<OpenAgentSessionMeta> {
-    let Ok(available) = sqlite_table_columns(connection, "session") else {
-        return Vec::new();
-    };
-    if !available.contains("id") {
-        return Vec::new();
-    }
-    // Narrower schemas (no `agent`, `model`, token columns) still yield
-    // their conversations — missing columns project as NULL.
-    let projection = OPENAGENT_SESSION_COLUMNS
-        .iter()
-        .map(|column| {
-            if available.contains(*column) {
-                format!("\"{column}\"")
-            } else {
-                "NULL".to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let order = if available.contains("time_updated") {
-        "ORDER BY time_updated DESC, id ASC"
-    } else {
-        "ORDER BY id ASC"
-    };
-    let mut statement =
-        match connection.prepare(&format!("SELECT {projection} FROM session {order}")) {
-            Ok(statement) => statement,
-            Err(_) => return Vec::new(),
-        };
-    let rows = match statement.query_map([], |row| {
-        let Some(id) = sqlite_value_text(row.get_ref(0)?).filter(|v| !v.trim().is_empty()) else {
-            return Ok(None);
-        };
-        Ok(Some(OpenAgentSessionMeta {
-            id,
-            title: sqlite_value_text(row.get_ref(1)?),
-            directory: sqlite_value_text(row.get_ref(2)?)
-                .as_deref()
-                .and_then(bounded_workspace),
-            path: sqlite_value_text(row.get_ref(3)?),
-            agent: sqlite_value_text(row.get_ref(4)?),
-            model: sqlite_value_text(row.get_ref(5)?),
-            created_at: row.get::<_, Option<i64>>(6)?.and_then(epoch_to_rfc3339),
-            updated_at: row.get::<_, Option<i64>>(7)?.and_then(epoch_to_rfc3339),
-            usage: openagent_usage(
-                row.get::<_, Option<i64>>(8)?,
-                row.get::<_, Option<i64>>(9)?,
-                row.get::<_, Option<i64>>(10)?,
-                row.get::<_, Option<i64>>(11)?,
-                row.get::<_, Option<i64>>(12)?,
-            ),
-            parent_id: sqlite_value_text(row.get_ref(13)?).filter(|v| !v.trim().is_empty()),
-        }))
-    }) {
-        Ok(rows) => rows,
-        Err(_) => return Vec::new(),
-    };
-    rows.flatten().flatten().collect()
-}
-
-fn openagent_usage(
-    input: Option<i64>,
-    output: Option<i64>,
-    reasoning: Option<i64>,
-    cache_read: Option<i64>,
-    cache_write: Option<i64>,
-) -> Option<Value> {
-    let cached_input_tokens = cache_read.unwrap_or(0).max(0);
-    let prompt_tokens = [input, cache_read, cache_write]
-        .into_iter()
-        .flatten()
-        .filter(|value| *value > 0)
-        .sum::<i64>();
-    let completion_tokens = [output, reasoning]
-        .into_iter()
-        .flatten()
-        .filter(|value| *value > 0)
-        .sum::<i64>();
-    let total_tokens = prompt_tokens + completion_tokens;
-    if total_tokens <= 0 {
-        return None;
-    }
-    Some(json!({
-        "promptTokens": prompt_tokens,
-        "cachedInputTokens": cached_input_tokens,
-        "completionTokens": completion_tokens,
-        "totalTokens": total_tokens,
-        "source": "openagent-sqlite",
-    }))
-}
-
-/// Decode one `session` row plus its `message`/`part` rows.
-fn decode_openagent_session(
-    connection: &Connection,
-    path: &Path,
-    session_id: &str,
-) -> Result<Decoded> {
-    let meta = openagent_session_rows(connection)
-        .into_iter()
-        .find(|meta| meta.id == session_id)
-        .ok_or_else(|| Error::Decode {
-            path: path.to_path_buf(),
-            line: 0,
-            message: format!("session `{session_id}` absent from the `session` table"),
-        })?;
-    let mut conversation = Conversation::new(meta.id.clone());
-    conversation.agent = Some("cursor".to_string());
-    conversation.title = meta.title;
-    conversation.created_at = meta.created_at;
-    conversation.updated_at = meta.updated_at;
-    conversation.cwd = meta.directory.or(meta.path);
-
-    let mut record_lines = Vec::new();
-    let mut skipped = Vec::new();
-    if let Some(parent) = meta.parent_id {
-        conversation.records.push(meta_record(
-            0,
-            "subagent-lineage",
-            json!({"parentSessionId": parent, "agent": meta.agent, "model": meta.model}),
-        ));
-        record_lines.push(0);
-    } else if meta.agent.is_some() || meta.model.is_some() {
-        conversation.records.push(meta_record(
-            0,
-            "session-agent",
-            json!({"agent": meta.agent, "model": meta.model}),
-        ));
-        record_lines.push(0);
-    }
-    if let Some(usage) = meta.usage {
-        conversation.records.push(meta_record(0, "usage", usage));
-        record_lines.push(0);
-    }
-
-    let mut parts_by_message = openagent_parts_by_message(connection, &meta.id);
-    let Ok(available) = sqlite_table_columns(connection, "message") else {
-        return Err(Error::Decode {
-            path: path.to_path_buf(),
-            line: 0,
-            message: "openagent store carries no readable `message` table".into(),
-        });
-    };
-    if !["id", "session_id", "data"]
-        .iter()
-        .all(|column| available.contains(*column))
-    {
-        return Err(Error::Decode {
-            path: path.to_path_buf(),
-            line: 0,
-            message: "openagent `message` schema unrecognized".into(),
-        });
-    }
-    let created = if available.contains("time_created") {
-        "time_created"
-    } else {
-        "NULL"
-    };
-    let order = if available.contains("time_created") {
-        "time_created ASC, id ASC"
-    } else {
-        "id ASC"
-    };
-    let query =
-        format!("SELECT id, {created}, data FROM message WHERE session_id=?1 ORDER BY {order}");
-    let mut statement = connection.prepare(&query).map_err(|_| Error::Decode {
-        path: path.to_path_buf(),
-        line: 0,
-        message: "openagent `message` query fails to prepare".into(),
-    })?;
-    let rows = statement
-        .query_map([&meta.id], |row| {
-            Ok((
-                sqlite_value_text(row.get_ref(0)?),
-                row.get::<_, Option<i64>>(1)?,
-                sqlite_value_text(row.get_ref(2)?),
-            ))
-        })
-        .map_err(|_| Error::Decode {
-            path: path.to_path_buf(),
-            line: 0,
-            message: "openagent `message` rows do not read".into(),
-        })?;
-
-    let mut line_count = 0usize;
-    for (index, row) in rows.enumerate() {
-        line_count = index + 1;
-        let line = index + 1;
-        let Ok((message_id, created_at, data)) = row else {
-            skipped.push(Skipped {
-                line,
-                native_type: Some("message".to_string()),
-                reason: "corrupt".to_string(),
-            });
-            continue;
-        };
-        let (Some(message_id), Some(data)) = (message_id, data) else {
-            continue;
-        };
-        let Ok(data_value) = serde_json::from_str::<Value>(&data) else {
-            skipped.push(Skipped {
-                line,
-                native_type: Some("message".to_string()),
-                reason: "corrupt".to_string(),
-            });
-            continue;
-        };
-        let ts = data_value
-            .get("time")
-            .and_then(|time| time.get("created"))
-            .and_then(epoch_value_to_rfc3339)
-            .or_else(|| created_at.and_then(epoch_to_rfc3339));
-        let role = extract_role(&data_value);
-        let parts = parts_by_message.remove(&message_id).unwrap_or_default();
-        let before = conversation.records.len();
-        if parts.is_empty() {
-            project_envelope(
-                &mut conversation,
-                &mut record_lines,
-                line,
-                &data_value,
-                &role,
-                ts.clone(),
-                Some(&message_id),
-            );
-        } else {
-            project_openagent_parts(
-                &mut conversation,
-                &mut record_lines,
-                &mut skipped,
-                OpenAgentMessage {
-                    line,
-                    parts: &parts,
-                    role: &role,
-                    ts: ts.clone(),
-                    message_id: &message_id,
-                },
-            );
-        }
-        if let Some(tokens) = data_value.get("tokens").filter(|t| t.is_object()) {
-            push_record(
-                &mut conversation.records,
-                &mut record_lines,
-                line,
-                ts,
-                Body::Meta {
-                    subtype: "usage".to_string(),
-                    data: json!({"tokens": tokens}),
-                },
-            );
-        }
-        if conversation.records.len() == before {
-            skipped.push(Skipped {
-                line,
-                native_type: Some(format!("message:{role}")),
-                reason: "projection".to_string(),
-            });
-        }
-    }
-    for (i, rec) in conversation.records.iter_mut().enumerate() {
-        rec.ordinal = i as u64;
-    }
-    Ok(Decoded {
-        conversation,
-        record_lines,
-        line_count: line_count + 1,
-        skipped,
-    })
-}
-
-/// `part` rows grouped by `message_id`, in store order.
-fn openagent_parts_by_message(
-    connection: &Connection,
-    session_id: &str,
-) -> std::collections::HashMap<String, Vec<Value>> {
-    let mut out = std::collections::HashMap::<String, Vec<Value>>::new();
-    let Ok(available) = sqlite_table_columns(connection, "part") else {
-        return out;
-    };
-    if !["message_id", "session_id", "data"]
-        .iter()
-        .all(|column| available.contains(*column))
-    {
-        return out;
-    }
-    let order = match (available.contains("time_created"), available.contains("id")) {
-        (true, true) => "time_created ASC, id ASC",
-        (true, false) => "time_created ASC",
-        (false, true) => "id ASC",
-        (false, false) => "rowid ASC",
-    };
-    let query = format!("SELECT message_id, data FROM part WHERE session_id=?1 ORDER BY {order}");
-    let Ok(mut statement) = connection.prepare(&query) else {
-        return out;
-    };
-    let Ok(rows) = statement.query_map([session_id], |row| {
-        Ok((
-            sqlite_value_text(row.get_ref(0)?),
-            sqlite_value_text(row.get_ref(1)?),
-        ))
-    }) else {
-        return out;
-    };
-    for row in rows.flatten() {
-        let (Some(message_id), Some(data)) = row else {
-            continue;
-        };
-        let value = serde_json::from_str::<Value>(&data).unwrap_or_else(|_| json!(data));
-        out.entry(message_id).or_default().push(value);
-    }
-    out
-}
-
-/// Project one openagent message's `part` payloads into canonical records.
-/// One openagent `message` row and its joined `part` payloads.
-struct OpenAgentMessage<'a> {
-    line: usize,
-    parts: &'a [Value],
-    role: &'a str,
-    ts: Option<String>,
-    message_id: &'a str,
-}
-
-fn project_openagent_parts(
-    conversation: &mut Conversation,
-    record_lines: &mut Vec<usize>,
-    skipped: &mut Vec<Skipped>,
-    message: OpenAgentMessage<'_>,
-) {
-    let OpenAgentMessage {
-        line,
-        parts,
-        role,
-        ts,
-        message_id,
-    } = message;
-    for part in parts {
-        let kind = part.get("type").and_then(Value::as_str).unwrap_or_default();
-        match kind {
-            "text" => {
-                if let Some(text) = non_empty(part.get("text")) {
-                    let body = if role == "user" {
-                        Body::User {
-                            text,
-                            attachments: Vec::new(),
-                        }
-                    } else {
-                        Body::Assistant { text, model: None }
-                    };
-                    push_record_id(
-                        conversation,
-                        record_lines,
-                        line,
-                        ts.clone(),
-                        Some(message_id.to_string()),
-                        body,
-                    );
-                }
-            }
-            "reasoning" => {
-                if let Some(text) = non_empty(part.get("text").or_else(|| part.get("reasoning"))) {
-                    push_record_id(
-                        conversation,
-                        record_lines,
-                        line,
-                        ts.clone(),
-                        Some(message_id.to_string()),
-                        Body::Reasoning { text },
-                    );
-                }
-            }
-            "tool" => {
-                let call_id = part
-                    .get("callID")
-                    .or_else(|| part.get("id"))
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
-                let name = part
-                    .get("tool")
-                    .or_else(|| part.get("name"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("tool")
-                    .to_string();
-                push_record_id(
-                    conversation,
-                    record_lines,
-                    line,
-                    ts.clone(),
-                    Some(message_id.to_string()),
-                    Body::ToolCall {
-                        call_id: call_id.clone(),
-                        name: name.clone(),
-                        args: part
-                            .pointer("/state/input")
-                            .or_else(|| part.get("input"))
-                            .cloned()
-                            .unwrap_or(Value::Null),
-                    },
-                );
-                let state = part.get("state").cloned().unwrap_or(Value::Null);
-                let output = state.get("output").or_else(|| state.get("result")).cloned();
-                let error = state.get("error").cloned();
-                let has_error = error.is_some();
-                if output.is_some() || has_error {
-                    push_record_id(
-                        conversation,
-                        record_lines,
-                        line,
-                        ts.clone(),
-                        Some(message_id.to_string()),
-                        Body::ToolResult {
-                            call_id,
-                            name: Some(name),
-                            content: output.or(error).unwrap_or(Value::Null),
-                            is_error: state
-                                .get("status")
-                                .and_then(Value::as_str)
-                                .map(|s| s == "error")
-                                .unwrap_or(false)
-                                || has_error,
-                        },
-                    );
-                }
-            }
-            "file" => {
-                if role == "user" {
-                    push_record_id(
-                        conversation,
-                        record_lines,
-                        line,
-                        ts.clone(),
-                        Some(message_id.to_string()),
-                        Body::User {
-                            text: part
-                                .get("filename")
-                                .or_else(|| part.get("url"))
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .to_string(),
-                            attachments: vec![Attachment {
-                                kind: "file".to_string(),
-                                media_type: part
-                                    .get("mime")
-                                    .or_else(|| part.get("mediaType"))
-                                    .and_then(Value::as_str)
-                                    .map(str::to_string),
-                                data: part.clone(),
-                            }],
-                        },
-                    );
-                } else {
-                    skipped.push(Skipped {
-                        line,
-                        native_type: Some("part:file".to_string()),
-                        reason: "projection".to_string(),
-                    });
-                }
-            }
-            other => skipped.push(Skipped {
-                line,
-                native_type: Some(format!("part:{other}")),
-                reason: "projection".to_string(),
-            }),
-        }
-    }
-}
-
-/// Role extraction: numeric `type` (1 user, 0/2 agent) wins, then the
-/// role-ish string fields.
-fn extract_role(value: &Value) -> String {
-    if let Some(code) = value.get("type").and_then(Value::as_i64) {
-        match code {
-            1 => return "user".to_string(),
-            0 | 2 => return "agent".to_string(),
-            _ => {}
-        }
-    }
-    let role = ["role", "author", "speaker", "type", "source"]
-        .iter()
-        .find_map(|key| value.get(*key).and_then(Value::as_str))
-        .unwrap_or("system")
-        .to_ascii_lowercase();
-    if role.contains("user") || role.contains("human") {
-        "user".to_string()
-    } else if role.contains("assistant")
-        || role.contains("agent")
-        || role.contains("model")
-        || role.contains("ai")
-    {
-        "agent".to_string()
-    } else {
-        role
-    }
-}
-
-/// A message without `part` rows projects from its own envelope.
-fn project_envelope(
-    conversation: &mut Conversation,
-    record_lines: &mut Vec<usize>,
-    line: usize,
-    value: &Value,
-    role: &str,
-    ts: Option<String>,
-    id: Option<&str>,
-) {
-    if let Some(blocks) = value
-        .get("content")
-        .or_else(|| value.get("message").and_then(|m| m.get("content")))
-        .and_then(Value::as_array)
-    {
-        for block in blocks {
-            match block.get("type").and_then(Value::as_str).unwrap_or("text") {
-                "reasoning" | "thinking" => {
-                    if let Some(text) = non_empty(block.get("text")) {
-                        push_record_id(
-                            conversation,
-                            record_lines,
-                            line,
-                            ts.clone(),
-                            id.map(str::to_string),
-                            Body::Reasoning { text },
-                        );
-                    }
-                }
-                "tool-call" | "tool_use" => {
-                    push_record_id(
-                        conversation,
-                        record_lines,
-                        line,
-                        ts.clone(),
-                        id.map(str::to_string),
-                        Body::ToolCall {
-                            call_id: block
-                                .get("toolCallId")
-                                .or_else(|| block.get("id"))
-                                .and_then(Value::as_str)
-                                .map(str::to_string),
-                            name: block
-                                .get("toolName")
-                                .or_else(|| block.get("name"))
-                                .and_then(Value::as_str)
-                                .unwrap_or("tool")
-                                .to_string(),
-                            args: block
-                                .get("args")
-                                .or_else(|| block.get("input"))
-                                .cloned()
-                                .unwrap_or(Value::Null),
-                        },
-                    );
-                }
-                "tool-result" | "tool_result" => {
-                    push_record_id(
-                        conversation,
-                        record_lines,
-                        line,
-                        ts.clone(),
-                        id.map(str::to_string),
-                        tool_result_body(block),
-                    );
-                }
-                _ => {
-                    if let Some(text) =
-                        non_empty(block.get("text").or_else(|| block.get("content")))
-                    {
-                        let body = match role {
-                            "user" => Body::User {
-                                text,
-                                attachments: Vec::new(),
-                            },
-                            "system" => Body::System {
-                                subtype: "system".to_string(),
-                                text,
-                            },
-                            _ => Body::Assistant { text, model: None },
-                        };
-                        push_record_id(
-                            conversation,
-                            record_lines,
-                            line,
-                            ts.clone(),
-                            id.map(str::to_string),
-                            body,
-                        );
-                    }
-                }
-            }
-        }
-        return;
-    }
-    let text = value
-        .get("text")
-        .or_else(|| value.get("content"))
-        .and_then(Value::as_str)
-        .filter(|t| !t.trim().is_empty());
-    let Some(text) = text else {
-        return;
-    };
-    let body = match role {
-        "user" => Body::User {
-            text: text.to_string(),
-            attachments: Vec::new(),
-        },
-        "system" => Body::System {
-            subtype: "system".to_string(),
-            text: text.to_string(),
-        },
-        _ => Body::Assistant {
-            text: text.to_string(),
-            model: None,
-        },
-    };
-    push_record_id(
-        conversation,
-        record_lines,
-        line,
-        ts,
-        id.map(str::to_string),
-        body,
-    );
-}
-
 fn push_record(
     records: &mut Vec<Record>,
     record_lines: &mut Vec<usize>,
@@ -2165,32 +1568,6 @@ fn push_record(
     record_lines.push(line);
 }
 
-fn push_record_id(
-    conversation: &mut Conversation,
-    record_lines: &mut Vec<usize>,
-    line: usize,
-    ts: Option<String>,
-    id: Option<String>,
-    body: Body,
-) {
-    conversation.records.push(Record {
-        id,
-        parent: None,
-        ts,
-        ordinal: conversation.records.len() as u64,
-        body,
-    });
-    record_lines.push(line);
-}
-
-// ---------------------------------------------------------------------------
-// Transcript files (agent-transcripts / generic JSONL and JSON documents)
-// ---------------------------------------------------------------------------
-
-/// One `agent-transcripts/<id>/<id>.jsonl` or loose `.jsonl` transcript:
-/// `{"role","message":{"content":[blocks]}}` lines plus `{"type":…}`
-/// lifecycle rows. Identity comes from the path layout — Cursor records
-/// carry no session field.
 fn decode_transcript(path: &Path) -> Result<Decoded> {
     let file = File::open(path).map_err(Error::io(path))?;
     let mut conversation = Conversation::new(transcript_session_id(path));
@@ -2249,103 +1626,6 @@ fn decode_transcript(path: &Path) -> Result<Decoded> {
         line_count,
         skipped,
     })
-}
-
-/// A whole-document `.json` store file: message-shaped objects under the
-/// usual container keys, or the document itself when it is one message.
-fn decode_json_document(path: &Path) -> Result<Decoded> {
-    let raw = std::fs::read_to_string(path).map_err(Error::io(path))?;
-    let value: Value = serde_json::from_str(&raw).map_err(|e| Error::Decode {
-        path: path.to_path_buf(),
-        line: 0,
-        message: format!("not a JSON document: {e}"),
-    })?;
-    let mut conversation = Conversation::new(transcript_session_id(path));
-    conversation.agent = Some("cursor".to_string());
-    if let Some(id) = ["sessionId", "conversationId", "chatId", "id"]
-        .iter()
-        .find_map(|key| value.get(*key).and_then(Value::as_str))
-        .filter(|v| !v.trim().is_empty())
-    {
-        conversation.session_id = id.to_string();
-    }
-    conversation.title = value
-        .get("name")
-        .or_else(|| value.get("title"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(str::to_string);
-    let mut record_lines = Vec::new();
-    let mut skipped = Vec::new();
-    let mut messages = Vec::new();
-    collect_message_values(&value, &mut messages);
-    for (index, message) in messages.iter().enumerate() {
-        let before = conversation.records.len();
-        project_transcript_line(&mut conversation, &mut record_lines, index, message);
-        if conversation.records.len() == before {
-            skipped.push(Skipped {
-                line: index,
-                native_type: message
-                    .get("type")
-                    .or_else(|| message.get("role"))
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                reason: "projection".to_string(),
-            });
-        }
-    }
-    if conversation.records.is_empty() {
-        return Err(Error::Decode {
-            path: path.to_path_buf(),
-            line: 0,
-            message: "JSON document holds no conversation messages".into(),
-        });
-    }
-    for (i, rec) in conversation.records.iter_mut().enumerate() {
-        rec.ordinal = i as u64;
-    }
-    Ok(Decoded {
-        conversation,
-        record_lines,
-        line_count: messages.len(),
-        skipped,
-    })
-}
-
-/// Collect message-shaped objects from a JSON document's container keys.
-fn collect_message_values(value: &Value, out: &mut Vec<Value>) {
-    match value {
-        Value::Array(items) => {
-            for item in items {
-                collect_message_values(item, out);
-            }
-        }
-        Value::Object(object) => {
-            let mut descended = false;
-            for key in [
-                "messages",
-                "conversation",
-                "conversations",
-                "transcript",
-                "turns",
-                "items",
-                "entries",
-                "sessions",
-                "chats",
-                "chatSessions",
-            ] {
-                if let Some(child) = object.get(key) {
-                    descended = true;
-                    collect_message_values(child, out);
-                }
-            }
-            if !descended && (object.contains_key("role") || object.contains_key("message")) {
-                out.push(value.clone());
-            }
-        }
-        _ => {}
-    }
 }
 
 /// Transcript session identity: `agent-transcripts/<id>/<id>.jsonl`,
@@ -2462,12 +1742,17 @@ fn decode_sqlite_file(path: &Path) -> Result<Decoded> {
                     || !composer_bubble_ids(&connection, &composer.id).is_empty()
             })
             .collect::<Vec<_>>();
+        let known = composers
+            .iter()
+            .map(|composer| composer.id.clone())
+            .collect();
         return match composers.len() {
             1 => decode_composer_session(
                 &connection,
                 path,
                 &composers[0].id,
                 Some(&composers[0].key),
+                &known,
             ),
             n => Err(Error::Usage(format!(
                 "{} is a cursor container store holding {n} sessions; enumerate it",
@@ -2475,10 +1760,20 @@ fn decode_sqlite_file(path: &Path) -> Result<Decoded> {
             ))),
         };
     }
-    if openagent_schema(&connection) {
-        let sessions = openagent_session_refs(&connection, path);
+    if let Some(sessions) = aco::generic::openagent::session_refs(&connection, path) {
         return match sessions.len() {
-            1 => decode_openagent_session(&connection, path, &sessions[0].id),
+            1 => aco::generic::openagent::decode(
+                &connection,
+                path,
+                sessions[0].key.as_deref().unwrap_or(&sessions[0].id),
+                "cursor",
+            )?
+            .ok_or_else(|| {
+                Error::Usage(format!(
+                    "{} holds an openagent schema but no session row matched",
+                    path.display()
+                ))
+            }),
             n => Err(Error::Usage(format!(
                 "{} is an openagent container store holding {n} sessions; enumerate it",
                 path.display()
@@ -2488,10 +1783,13 @@ fn decode_sqlite_file(path: &Path) -> Result<Decoded> {
     if sqlite_table_exists(&connection, "blobs") {
         return decode_cli_store(&connection, path);
     }
-    Err(Error::Usage(format!(
-        "{} is not a recognized cursor conversation store",
-        path.display()
-    )))
+    match aco::generic::sqlite_session_keys(path)?.len() {
+        1 => aco::generic::decode_sqlite(path, None, "cursor"),
+        n => Err(Error::Usage(format!(
+            "{} is a cursor container store holding {n} sessions; enumerate it",
+            path.display()
+        ))),
+    }
 }
 
 // ---------------------------------------------------------------------------

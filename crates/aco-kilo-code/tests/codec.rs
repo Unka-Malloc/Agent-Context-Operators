@@ -200,6 +200,7 @@ fn decode_session_projects_openagent_rows() {
         id: "ses_main".to_string(),
         path: db,
         key: Some("ses_main".to_string()),
+        parent: None,
     };
     let decoded = aco_kilo_code::codec().decode_session(&session).unwrap();
     let conv = &decoded.conversation;
@@ -211,6 +212,8 @@ fn decode_session_projects_openagent_rows() {
     assert_eq!(
         kinds,
         [
+            RecordKind::Meta, // session-agent (model/projectPath)
+            RecordKind::Meta, // session usage counters
             RecordKind::User,
             RecordKind::Reasoning,
             RecordKind::ToolCall,
@@ -218,17 +221,15 @@ fn decode_session_projects_openagent_rows() {
             RecordKind::Assistant,
             RecordKind::Meta, // step-finish usage
             RecordKind::Meta, // message-level tokens usage
-            RecordKind::Meta, // session row metadata (model/projectPath)
-            RecordKind::Meta, // session usage counters
         ]
     );
     // The reasoning part keeps the provider text.
-    match &conv.records[1].body {
+    match &conv.records[3].body {
         Body::Reasoning { text } => assert_eq!(text, "hmm"),
         other => panic!("expected reasoning, got {other:?}"),
     }
     // The tool part decodes both call and result from `state`.
-    match &conv.records[2].body {
+    match &conv.records[4].body {
         Body::ToolCall {
             call_id,
             name,
@@ -240,7 +241,7 @@ fn decode_session_projects_openagent_rows() {
         }
         other => panic!("expected tool-call, got {other:?}"),
     }
-    match &conv.records[3].body {
+    match &conv.records[5].body {
         Body::ToolResult {
             content, is_error, ..
         } => {
@@ -249,26 +250,17 @@ fn decode_session_projects_openagent_rows() {
         }
         other => panic!("expected tool-result, got {other:?}"),
     }
-    // Message-level `tokens` blob → usage meta.
-    match &conv.records[6].body {
+    // Session-row columns without a canonical home → session-agent meta.
+    match &conv.records[0].body {
         Body::Meta { subtype, data } => {
-            assert_eq!(subtype, "usage");
-            assert_eq!(data["input"], 10);
-            assert_eq!(data["cache"]["read"], 2);
-        }
-        other => panic!("expected usage meta, got {other:?}"),
-    }
-    // Session-row columns without a canonical home → session meta.
-    match &conv.records[7].body {
-        Body::Meta { subtype, data } => {
-            assert_eq!(subtype, "session");
+            assert_eq!(subtype, "session-agent");
             assert_eq!(data["projectPath"], "/work/p");
             assert_eq!(data["model"], "kilo-auto/free");
         }
-        other => panic!("expected session meta, got {other:?}"),
+        other => panic!("expected session-agent meta, got {other:?}"),
     }
     // Session token columns → normalized usage meta.
-    match &conv.records[8].body {
+    match &conv.records[1].body {
         Body::Meta { subtype, data } => {
             assert_eq!(subtype, "usage");
             assert_eq!(data["scope"], "session");
@@ -278,6 +270,15 @@ fn decode_session_projects_openagent_rows() {
         }
         other => panic!("expected session usage meta, got {other:?}"),
     }
+    // Message-level `tokens` blob → usage meta.
+    match &conv.records[8].body {
+        Body::Meta { subtype, data } => {
+            assert_eq!(subtype, "usage");
+            assert_eq!(data["input"], 10);
+            assert_eq!(data["cache"]["read"], 2);
+        }
+        other => panic!("expected usage meta, got {other:?}"),
+    }
     // Step-finish is a lifecycle event the canonical model has no kind
     // for — it surfaces its usage and reports the skipped part.
     assert!(decoded
@@ -286,7 +287,7 @@ fn decode_session_projects_openagent_rows() {
         .any(|s| s.native_type.as_deref() == Some("step-finish")));
     // Parent id recorded on the assistant-side records.
     assert_eq!(
-        conv.records[1].parent.as_deref(),
+        conv.records[3].parent.as_deref(),
         Some("msg_u1"),
         "assistant records keep the message's parentID"
     );
@@ -300,6 +301,7 @@ fn decode_session_folds_bare_tool_result_blob() {
         id: "ses_sub".to_string(),
         path: db,
         key: Some("ses_sub".to_string()),
+        parent: None,
     };
     let decoded = aco_kilo_code::codec().decode_session(&session).unwrap();
     let kinds: Vec<RecordKind> = decoded
@@ -308,18 +310,18 @@ fn decode_session_folds_bare_tool_result_blob() {
         .iter()
         .map(|r| r.kind())
         .collect();
-    // The tool_result blob plus the session row's parentId metadata.
-    assert_eq!(kinds, [RecordKind::ToolResult, RecordKind::Meta]);
+    // The session row's parent lineage leads; the tool_result blob follows.
+    assert_eq!(kinds, [RecordKind::Meta, RecordKind::ToolResult]);
     match &decoded.conversation.records[0].body {
-        Body::ToolResult { content, .. } => assert_eq!(*content, "Synthetic result"),
-        other => panic!("expected tool-result, got {other:?}"),
+        Body::Meta { subtype, data } => {
+            assert_eq!(subtype, "subagent-lineage");
+            assert_eq!(data["parentSessionId"], "ses_main");
+        }
+        other => panic!("expected lineage meta, got {other:?}"),
     }
     match &decoded.conversation.records[1].body {
-        Body::Meta { subtype, data } => {
-            assert_eq!(subtype, "session");
-            assert_eq!(data["parentId"], "ses_main");
-        }
-        other => panic!("expected session meta, got {other:?}"),
+        Body::ToolResult { content, .. } => assert_eq!(*content, "Synthetic result"),
+        other => panic!("expected tool-result, got {other:?}"),
     }
 }
 
@@ -334,8 +336,7 @@ fn enumerate_generic_db_uses_probe_groups() {
     };
     let sessions = aco_kilo_code::codec().enumerate(&root, dir.path()).unwrap();
     assert_eq!(sessions.len(), 1);
-    assert_eq!(sessions[0].id, "conv-1");
-    assert_eq!(sessions[0].key.as_deref(), Some("history:conv-1"));
+    assert_eq!(sessions[0].key.as_deref(), Some("history/conv-1"));
     let decoded = aco_kilo_code::codec().decode_session(&sessions[0]).unwrap();
     let kinds: Vec<RecordKind> = decoded
         .conversation
@@ -391,7 +392,13 @@ fn decode_jsonl_groups_by_native_session() {
         ),
     )
     .unwrap();
-    let decoded = aco_kilo_code::codec().decode(&path).unwrap();
+    // Two declared session groups make the file a container: the codec
+    // enumerates one ref per group and each decodes its own records.
+    let codec = aco_kilo_code::codec();
+    let refs = codec.sessions_in_file(&path).unwrap();
+    let ids: Vec<&str> = refs.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["s1", "s2"]);
+    let decoded = codec.decode_session(&refs[0]).unwrap();
     assert_eq!(decoded.conversation.session_id, "s1");
     let kinds: Vec<RecordKind> = decoded
         .conversation
@@ -400,10 +407,12 @@ fn decode_jsonl_groups_by_native_session() {
         .map(|r| r.kind())
         .collect();
     assert_eq!(kinds, [RecordKind::User, RecordKind::Assistant]);
+    // The `s2` line belongs to another declared session — reported as a
+    // projection skip rather than mixed into `s1`.
     assert!(decoded
         .skipped
         .iter()
-        .any(|s| s.native_type.as_deref() == Some("session:s2")));
+        .any(|s| s.reason == "projection" && s.line == 2));
     assert!(decoded.skipped.iter().any(|s| s.reason == "corrupt"));
 }
 

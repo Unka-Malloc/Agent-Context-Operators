@@ -1,12 +1,19 @@
 use aco::model::{Conversation, RecordKind};
 use std::path::PathBuf;
 
+const OC_ID: &str = "12345678-1234-1234-1234-123456789abc";
+
+/// The shared session-grouping rule resolves a line's session from its
+/// declared keys or the conversation-uuid directory; the fixture keeps
+/// the real `type:session` header + identity-less event lines shape.
 fn jsonl_fixture(dir: &tempfile::TempDir) -> PathBuf {
-    let path = dir.path().join("transcript.jsonl");
+    let session_dir = dir.path().join(OC_ID);
+    std::fs::create_dir_all(&session_dir).unwrap();
+    let path = session_dir.join("transcript.jsonl");
     std::fs::write(
         &path,
         concat!(
-            r#"{"type":"session","id":"oc-42","cwd":"/work/proj","timestamp":"2026-01-01T10:00:00Z"}"#,
+            r#"{"type":"session","id":"12345678-1234-1234-1234-123456789abc","cwd":"/work/proj","timestamp":"2026-01-01T10:00:00Z"}"#,
             "\n",
             r#"{"role":"user","text":"hello agent","timestamp":"2026-01-01T10:00:01Z"}"#,
             "\n",
@@ -24,7 +31,7 @@ fn decode_jsonl_through_the_generic_lane() {
     let dir = tempfile::tempdir().unwrap();
     let decoded = aco_opencode::codec().decode(&jsonl_fixture(&dir)).unwrap();
     let conv = &decoded.conversation;
-    assert_eq!(conv.session_id, "oc-42");
+    assert_eq!(conv.session_id, OC_ID);
     assert_eq!(conv.agent.as_deref(), Some("opencode"));
     assert_eq!(conv.cwd.as_deref(), Some("/work/proj"));
     let kinds: Vec<RecordKind> = conv.records.iter().map(|r| r.kind()).collect();

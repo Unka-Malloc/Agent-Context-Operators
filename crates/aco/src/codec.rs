@@ -100,6 +100,10 @@ pub struct SessionRef {
     /// Container-internal key — table/row selector for SQLite stores;
     /// `None` when `path` *is* the session.
     pub key: Option<String>,
+    /// Declared parent session, when the store records lineage at
+    /// enumeration time (`parent_id`, `parentComposerId`). Consumers
+    /// scoping to a root fold descendants through this edge.
+    pub parent: Option<String>,
 }
 
 /// Output of encoding a conversation into one format.
@@ -174,6 +178,7 @@ pub trait Codec {
             id: self.session_id(path),
             path: path.to_path_buf(),
             key: None,
+            parent: None,
         }])
     }
 

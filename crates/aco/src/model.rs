@@ -98,6 +98,10 @@ pub enum Body {
     /// A human-authored turn.
     User {
         text: String,
+        /// Model the request was attributed to when the store records
+        /// per-turn attribution (e.g. a Cursor bubble's `modelInfo`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         attachments: Vec<Attachment>,
     },

@@ -11,11 +11,19 @@
 
 use std::path::{Path, PathBuf};
 
+use aco::codec::SessionRef;
 use aco::{
     Attachment, Body, Capability, CapabilityMatrix, Codec, Conversation, Decoded, Encoded, Error,
     Record, Result, Skipped,
 };
 use serde_json::{json, Value};
+
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
 
 const CAPS: CapabilityMatrix = CapabilityMatrix::new(
     true,
@@ -73,7 +81,13 @@ impl Codec for ClaudeCodec {
             .unwrap_or_default()
     }
 
+    /// `.json` artifacts are never claude transcripts — a `sessions[]`
+    /// document decodes through the shared lane, anything else through
+    /// the generic document decoder.
     fn decode(&self, path: &Path) -> Result<Decoded> {
+        if extension_of(path) == "json" {
+            return aco::generic::decode_json_document(path, "claude");
+        }
         let text = std::fs::read_to_string(path).map_err(Error::io(path))?;
         let mut conv = Conversation::new(self.session_id(path));
         conv.agent = Some("claude".into());
@@ -164,12 +178,62 @@ impl Codec for ClaudeCodec {
                 record_lines.push(idx);
             }
         }
+        if conv.records.is_empty()
+            && !skipped.is_empty()
+            && matches!(extension_of(path).as_str(), "jsonl" | "ndjson")
+        {
+            // A `.jsonl` artifact without claude `type` lines is a
+            // generic transcript hosted under the claude adapter.
+            return aco::generic::decode_jsonl(path, "claude");
+        }
         Ok(Decoded {
             conversation: conv,
             record_lines,
             line_count,
             skipped,
         })
+    }
+
+    /// A `.json` document holding `sessions[]` items or a `.jsonl`
+    /// transcript declaring several session groups enumerates one ref
+    /// per unit; everything else stays one session per file.
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        match extension_of(path).as_str() {
+            "json" => {
+                let refs = aco::generic::json_document_session_refs(path);
+                if !refs.is_empty() {
+                    return Ok(refs);
+                }
+            }
+            "jsonl" | "ndjson" => {
+                let refs = aco::generic::jsonl_session_refs(path);
+                if !refs.is_empty() {
+                    return Ok(refs);
+                }
+            }
+            _ => {}
+        }
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+            parent: None,
+        }])
+    }
+
+    /// `key = Some` selects one container unit — a `sessions[]` item or
+    /// a declared session group; `key = None` decodes the file.
+    fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
+        match session.key.as_deref() {
+            None => self.decode(&session.path),
+            Some(key) => match extension_of(&session.path).as_str() {
+                "json" => aco::generic::decode_json_document_session(&session.path, key, "claude"),
+                "jsonl" | "ndjson" => {
+                    aco::generic::decode_jsonl_session(&session.path, key, "claude")
+                }
+                _ => self.decode(&session.path),
+            },
+        }
     }
 
     fn encode(&self, conv: &Conversation) -> Result<Encoded> {
@@ -368,7 +432,14 @@ fn message_bodies(line: &Value, user: bool) -> Vec<Body> {
         .map(String::from);
     let parts: Vec<Value> = match message.get("content") {
         Some(Value::Array(parts)) => parts.clone(),
-        Some(Value::String(s)) => vec![json!({"type": "text", "text": s})],
+        // A string content field can itself be an embedded JSON message
+        // (`"{\"type\":\"text\",\"text\":…}"`) — decode it like the
+        // generic extractor does.
+        Some(Value::String(s)) => {
+            let text =
+                aco::generic::extract_text(&Value::String(s.clone())).unwrap_or_else(|| s.clone());
+            vec![json!({"type": "text", "text": text})]
+        }
         _ => Vec::new(),
     };
 
@@ -394,6 +465,7 @@ fn message_bodies(line: &Value, user: bool) -> Vec<Body> {
         match ptype {
             "text" if user => bodies.push(Body::User {
                 text: part_text(part, "text"),
+                model: None,
                 attachments: std::mem::take(&mut pending),
             }),
             "text" => bodies.push(Body::Assistant {
@@ -428,6 +500,7 @@ fn message_bodies(line: &Value, user: bool) -> Vec<Body> {
                 if !has_text && !pending.is_empty() {
                     bodies.push(Body::User {
                         text: String::new(),
+                        model: None,
                         attachments: std::mem::take(&mut pending),
                     });
                 }
@@ -442,6 +515,14 @@ fn message_bodies(line: &Value, user: bool) -> Vec<Body> {
                 data: part.clone(),
             }),
         }
+    }
+    // `message.usage` rides the message blob — a trailing `meta{usage}`
+    // record the consumer folds onto the message that produced it.
+    if let Some(usage) = message.get("usage").filter(|u| u.is_object()) {
+        bodies.push(Body::Meta {
+            subtype: "usage".into(),
+            data: usage.clone(),
+        });
     }
     bodies
 }
@@ -518,7 +599,11 @@ mod tests {
 
         // The image part folded onto the message's User record.
         match &conv.records[0].body {
-            Body::User { text, attachments } => {
+            Body::User {
+                text,
+                model: None,
+                attachments,
+            } => {
                 assert_eq!(text, "hello agent");
                 assert_eq!(attachments.len(), 1);
                 assert_eq!(attachments[0].kind, "image");

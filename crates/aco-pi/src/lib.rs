@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use aco::codec::{Capability, CapabilityMatrix, Codec, Decoded, Encoded, Skipped};
+use aco::codec::{Capability, CapabilityMatrix, Codec, Decoded, Encoded, SessionRef, Skipped};
 use aco::model::{Body, Conversation, Record, RecordKind};
 use aco::store::HistoryRoot;
 use aco::Result;
@@ -36,6 +36,13 @@ const CAPABILITIES: CapabilityMatrix = CapabilityMatrix::new(
 /// One codec instance for the registry.
 pub fn codec() -> &'static dyn Codec {
     &PiCodec
+}
+
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 impl Codec for PiCodec {
@@ -81,7 +88,13 @@ impl Codec for PiCodec {
             .unwrap_or_else(|| "pi-session".to_string())
     }
 
+    /// `.json` artifacts decode through the shared document lane —
+    /// pi transcripts are `.jsonl`, so a `.json` file is a generic
+    /// document hosted under the pi adapter.
     fn decode(&self, path: &Path) -> Result<Decoded> {
+        if extension_of(path) == "json" {
+            return aco::generic::decode_json_document(path, "pi");
+        }
         let file = File::open(path).map_err(aco::Error::io(path))?;
         let mut session_id = path
             .file_stem()
@@ -155,6 +168,7 @@ impl Codec for PiCodec {
                                     ts,
                                     Body::User {
                                         text,
+                                        model: None,
                                         attachments: Vec::new(),
                                     },
                                 );
@@ -295,6 +309,46 @@ impl Codec for PiCodec {
             line_count,
             skipped,
         })
+    }
+
+    /// A `.json` document holding `sessions[]` items or a `.jsonl`
+    /// transcript declaring several session groups enumerates one ref
+    /// per unit; everything else stays one session per file.
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        match extension_of(path).as_str() {
+            "json" => {
+                let refs = aco::generic::json_document_session_refs(path);
+                if !refs.is_empty() {
+                    return Ok(refs);
+                }
+            }
+            "jsonl" | "ndjson" => {
+                let refs = aco::generic::jsonl_session_refs(path);
+                if !refs.is_empty() {
+                    return Ok(refs);
+                }
+            }
+            _ => {}
+        }
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+            parent: None,
+        }])
+    }
+
+    /// `key = Some` selects one container unit — a `sessions[]` item or
+    /// a declared session group; `key = None` decodes the file.
+    fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
+        match session.key.as_deref() {
+            None => self.decode(&session.path),
+            Some(key) => match extension_of(&session.path).as_str() {
+                "json" => aco::generic::decode_json_document_session(&session.path, key, "pi"),
+                "jsonl" | "ndjson" => aco::generic::decode_jsonl_session(&session.path, key, "pi"),
+                _ => self.decode(&session.path),
+            },
+        }
     }
 
     fn encode(&self, conversation: &Conversation) -> Result<Encoded> {

@@ -331,6 +331,7 @@ fn enumerate_emits_one_session_ref_per_composer_row() {
             id: "composer-one".to_string(),
             path: db,
             key: Some("composerData:composer-one".to_string()),
+            parent: None,
         }
     );
 }
@@ -374,6 +375,7 @@ fn decode_session_reads_composer_bubbles() {
         id: "composer-1".to_string(),
         path: db,
         key: Some("composerData:composer-1".to_string()),
+        parent: None,
     };
     let decoded = aco_cursor::codec().decode_session(&session).unwrap();
     let conv = &decoded.conversation;
@@ -384,19 +386,28 @@ fn decode_session_reads_composer_bubbles() {
     let kinds: Vec<RecordKind> = conv.records.iter().map(|r| r.kind()).collect();
     assert_eq!(
         kinds,
-        [RecordKind::User, RecordKind::Assistant, RecordKind::Meta]
+        [
+            RecordKind::Meta,
+            RecordKind::User,
+            RecordKind::Assistant,
+            RecordKind::Meta
+        ]
     );
-    match &conv.records[1].body {
+    match &conv.records[0].body {
+        Body::Meta { subtype, .. } => assert_eq!(subtype, "session-agent"),
+        other => panic!("expected session-facts meta, got {other:?}"),
+    }
+    match &conv.records[2].body {
         Body::Assistant { text, model } => {
             assert_eq!(text, "scanning now");
             assert_eq!(model.as_deref(), Some("grok-4.5"));
         }
         other => panic!("expected assistant, got {other:?}"),
     }
-    match &conv.records[2].body {
+    match &conv.records[3].body {
         Body::Meta { subtype, data } => {
             assert_eq!(subtype, "usage");
-            assert_eq!(data["tokenCount"]["inputTokens"], 120);
+            assert_eq!(data["usage"]["inputTokens"], 120);
         }
         other => panic!("expected usage meta, got {other:?}"),
     }
@@ -407,18 +418,28 @@ fn delegated_composer_carries_lineage_meta() {
     let dir = tempfile::tempdir().unwrap();
     let db = vscdb_fixture(
         dir.path(),
-        &[(
-            "child-composer",
-            r#"{"composerId":"child-composer","name":"Child",
+        &[
+            (
+                "child-composer",
+                r#"{"composerId":"child-composer","name":"Child",
                 "subagentInfo":{"parentComposerId":"parent-composer","subagentTypeName":"explore"},
                 "fullConversationHeadersOnly":[{"bubbleId":"c1"}]}"#,
-            &[("c1", 1, "task work")],
-        )],
+                &[("c1", 1, "task work")],
+            ),
+            // The parent row must exist: an unresolvable parent pointer
+            // leaves the session a plain root, never a delegated marker.
+            (
+                "parent-composer",
+                r#"{"composerId":"parent-composer","name":"Parent"}"#,
+                &[],
+            ),
+        ],
     );
     let session = SessionRef {
         id: "child-composer".to_string(),
         path: db,
         key: Some("composerData:child-composer".to_string()),
+        parent: None,
     };
     let decoded = aco_cursor::codec().decode_session(&session).unwrap();
     match &decoded.conversation.records[0].body {
@@ -486,6 +507,7 @@ fn enumerate_finds_store_db_sessions_and_skips_meta_json() {
             id: "aaaa-bbbb".to_string(),
             path: db,
             key: None,
+            parent: None,
         }]
     );
 }
@@ -621,6 +643,7 @@ fn openagent_child_session_carries_lineage() {
         id: "s2".to_string(),
         path: db,
         key: Some("s2".to_string()),
+        parent: None,
     };
     let decoded = aco_cursor::codec().decode_session(&session).unwrap();
     match &decoded.conversation.records[0].body {
@@ -738,6 +761,7 @@ fn encode_emits_transcript_lines_with_honest_projection() {
     for (i, body) in [
         Body::User {
             text: "go".to_string(),
+            model: None,
             attachments: Vec::new(),
         },
         Body::Reasoning {

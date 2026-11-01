@@ -145,6 +145,7 @@ pub fn resolve_session(codec: &dyn Codec, home: &Path, session: &str) -> Result<
                 id: codec.session_id(as_path),
                 path: as_path.to_path_buf(),
                 key: None,
+                parent: None,
             },
             kind: "explicit-path",
         });

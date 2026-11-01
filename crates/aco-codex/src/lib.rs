@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+use aco::codec::SessionRef;
 use aco::{
     Attachment, Body, Capability, CapabilityMatrix, Codec, Conversation, Decoded, Encoded, Error,
     Record, Result, Skipped,
@@ -76,13 +77,24 @@ impl Codec for CodexCodec {
         }
     }
 
+    /// `.json` artifacts decode through the shared document lane —
+    /// codex rollouts are `.jsonl`, so a `.json` file is a generic
+    /// document hosted under the codex adapter.
     fn decode(&self, path: &Path) -> Result<Decoded> {
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
+            return aco::generic::decode_json_document(path, "codex");
+        }
         let text = std::fs::read_to_string(path).map_err(Error::io(path))?;
         let mut conv = Conversation::new(self.session_id(path));
         conv.agent = Some("codex".into());
         let mut record_lines = Vec::new();
         let mut skipped = Vec::new();
         let mut line_count = 0usize;
+        let mut saw_rollout = false;
 
         for (idx, raw) in text.lines().enumerate() {
             line_count = idx + 1;
@@ -100,6 +112,15 @@ impl Codec for CodexCodec {
                 .map(String::from);
             let ty = line.get("type").and_then(Value::as_str).unwrap_or("");
             let payload = line.get("payload").cloned().unwrap_or(Value::Null);
+            saw_rollout |= matches!(
+                ty,
+                "session_meta"
+                    | "response_item"
+                    | "event_msg"
+                    | "turn_context"
+                    | "world_state"
+                    | "token_usage_record"
+            );
             let ptype = payload.get("type").and_then(Value::as_str).unwrap_or("");
             let native_id = payload.get("id").and_then(Value::as_str).map(String::from);
 
@@ -202,12 +223,69 @@ impl Codec for CodexCodec {
             record_lines.push(idx);
         }
         conv.updated_at = conv.records.iter().rev().find_map(|r| r.ts.clone());
+        if conv.created_at.is_none() {
+            conv.created_at = conv.records.iter().find_map(|r| r.ts.clone());
+        }
+        if !saw_rollout && (!skipped.is_empty() || conv.records.is_empty()) {
+            // A `.jsonl` artifact with no rollout-typed lines is a
+            // generic transcript hosted under the codex adapter —
+            // decode it with the shared shape decoder so its session
+            // groups and records still resolve.
+            return aco::generic::decode_jsonl(path, "codex");
+        }
         Ok(Decoded {
             conversation: conv,
             record_lines,
             line_count,
             skipped,
         })
+    }
+
+    /// A `.jsonl` file hosting several declared session groups is a
+    /// container: one [`SessionRef`] per group so hosts can read each
+    /// session. Real rollout files carry a single `session_meta` id and
+    /// stay file-addressed.
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        let ext = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if matches!(ext, "jsonl" | "ndjson") {
+            let refs = aco::generic::jsonl_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        if ext == "json" {
+            let refs = aco::generic::json_document_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+            parent: None,
+        }])
+    }
+
+    /// `key = Some(..)` decodes one declared session group out of a
+    /// multi-session `.jsonl` or one `sessions[]` item out of a `.json`
+    /// document; `key = None` decodes the file.
+    fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
+        match session.key.as_deref() {
+            Some(key) => match session
+                .path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default()
+            {
+                "json" => aco::generic::decode_json_document_session(&session.path, key, "codex"),
+                _ => aco::generic::decode_jsonl_session(&session.path, key, "codex"),
+            },
+            None => self.decode(&session.path),
+        }
     }
 
     fn encode(&self, conv: &Conversation) -> Result<Encoded> {
@@ -370,6 +448,7 @@ fn message_body(payload: &Value) -> Body {
     match role {
         "user" => Body::User {
             text,
+            model: None,
             attachments: Vec::<Attachment>::new(),
         },
         "assistant" => Body::Assistant { text, model: None },

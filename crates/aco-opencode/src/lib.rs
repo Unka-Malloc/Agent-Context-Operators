@@ -117,31 +117,63 @@ impl Codec for OpenCodeCodec {
             .collect()
     }
 
-    /// A database file enumerates one [`SessionRef`] per stored session
-    /// key; every other accepted artifact stays one session per file.
+    /// A database file enumerates one [`SessionRef`] per stored
+    /// session: `session` rows under the OpenAgent schema when present,
+    /// else the shared probe's `table/key` row groups. A `.json`
+    /// document yields `sessions[]` items and a `.jsonl` transcript its
+    /// declared session groups. Every other accepted artifact stays one
+    /// session per file.
     fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
-        if SQLITE_EXTENSIONS.contains(&extension_of(path).as_str()) && !rejected_file_name(path) {
-            return Ok(aco::generic::sqlite_session_keys(path)?
-                .into_iter()
-                .map(|key| SessionRef {
-                    id: key.clone(),
-                    path: path.to_path_buf(),
-                    key: Some(key),
-                })
-                .collect());
+        let ext = extension_of(path);
+        if SQLITE_EXTENSIONS.contains(&ext.as_str()) && !rejected_file_name(path) {
+            return Ok(database_session_refs(path));
+        }
+        if ext == "json" {
+            let refs = aco::generic::json_document_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        if matches!(ext.as_str(), "jsonl" | "ndjson") {
+            let refs = aco::generic::jsonl_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
         }
         Ok(vec![SessionRef {
             id: self.session_id(path),
             path: path.to_path_buf(),
             key: None,
+            parent: None,
         }])
     }
 
-    /// `key = Some(..)` reads that container session; `key = None`
-    /// falls through to the file decoder.
+    /// `key = Some(..)` reads that container session — an OpenAgent
+    /// `session.id` first, then a probe selector, or a `sessions[]`
+    /// item / session group on JSON artifacts; `key = None` falls
+    /// through to the file decoder.
     fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
         match &session.key {
-            Some(key) => aco::generic::decode_sqlite(&session.path, Some(key), self.id()),
+            Some(key) => match extension_of(&session.path).as_str() {
+                "jsonl" | "ndjson" => {
+                    aco::generic::decode_jsonl_session(&session.path, key, self.id())
+                }
+                "json" => aco::generic::decode_json_document_session(&session.path, key, self.id()),
+                _ => {
+                    if let Some(connection) = aco::generic::openagent::open_read_only(&session.path)
+                    {
+                        if let Some(decoded) = aco::generic::openagent::decode(
+                            &connection,
+                            &session.path,
+                            key,
+                            self.id(),
+                        )? {
+                            return Ok(decoded);
+                        }
+                    }
+                    aco::generic::decode_sqlite(&session.path, Some(key), self.id())
+                }
+            },
             None => self.decode(&session.path),
         }
     }
@@ -189,6 +221,17 @@ fn extension_of(path: &Path) -> String {
         .and_then(|e| e.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase()
+}
+
+/// Session refs in one database: `session` rows keyed by `id` under
+/// the OpenAgent schema, else the shared probe's `table/key` groups.
+fn database_session_refs(db: &Path) -> Vec<SessionRef> {
+    if let Some(connection) = aco::generic::openagent::open_read_only(db) {
+        if let Some(refs) = aco::generic::openagent::session_refs(&connection, db) {
+            return refs;
+        }
+    }
+    aco::generic::sqlite_session_refs(db).unwrap_or_default()
 }
 
 /// An environment-declared base directory with a home-relative fallback.

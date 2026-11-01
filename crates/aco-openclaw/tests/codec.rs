@@ -8,9 +8,9 @@ fn jsonl_fixture(dir: &tempfile::TempDir) -> PathBuf {
         concat!(
             r#"{"type":"session","id":"claw-42","cwd":"/work/proj","timestamp":"2026-01-01T10:00:00Z"}"#,
             "\n",
-            r#"{"role":"user","text":"hello agent","timestamp":"2026-01-01T10:00:01Z"}"#,
+            r#"{"sessionId":"claw-42","role":"user","text":"hello agent","timestamp":"2026-01-01T10:00:01Z"}"#,
             "\n",
-            r#"{"type":"message","timestamp":"2026-01-01T10:00:02Z","message":{"role":"assistant","model":"m-1","content":[{"type":"thinking","thinking":"pondering"},{"type":"text","text":"working on it"}],"usage":{"promptTokens":10,"completionTokens":5}}}"#,
+            r#"{"sessionId":"claw-42","type":"message","timestamp":"2026-01-01T10:00:02Z","message":{"role":"assistant","model":"m-1","content":[{"type":"thinking","thinking":"pondering"},{"type":"text","text":"working on it"}],"usage":{"promptTokens":10,"completionTokens":5}}}"#,
             "\n",
             "not json\n",
         ),
