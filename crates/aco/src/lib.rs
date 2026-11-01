@@ -14,6 +14,7 @@
 pub mod codec;
 pub mod edit;
 pub mod error;
+pub mod generic;
 pub mod model;
 pub mod ops;
 pub mod search;
