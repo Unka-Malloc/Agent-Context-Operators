@@ -1,0 +1,35 @@
+# Build output, temporary reports and plans — one ignored class.
+target/
+build/
+build-*/
+dist/
+out/
+coverage/
+.cache/
+*.log
+*.tmp
+docs/plans/
+docs/reports/
+tmp/
+
+# Secrets — the example file stays tracked.
+.env
+.env.*
+.env.local
+!.env.example
+
+# OS and editor noise.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# Dependency and interpreter state.
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+.dart_tool/

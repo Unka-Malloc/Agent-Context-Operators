@@ -1,0 +1,21 @@
+[package]
+name = "aco-cli"
+description = "The `aco` binary: codec registry and command-line surface for Agent Context Operators."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "aco"
+path = "src/main.rs"
+
+[dependencies]
+aco.workspace = true
+aco-codex = { path = "../aco-codex" }
+aco-claude = { path = "../aco-claude" }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
