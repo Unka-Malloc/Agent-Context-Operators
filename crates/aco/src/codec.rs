@@ -164,11 +164,24 @@ pub trait Codec {
             .collect()
     }
 
+    /// Sessions carried by one session-candidate file. Default: the
+    /// file *is* the session. Container-store codecs (SQLite) override
+    /// to emit one [`SessionRef`] per stored row — this hook lets a
+    /// host that walks files itself (privacy-pruned discovery) still
+    /// reach row-level sessions without calling [`Codec::enumerate`].
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+        }])
+    }
+
     /// Enumerate the sessions one concrete root holds. Default:
     /// `select_session_files` over the recursive walk (or the single
-    /// file, for `JsonlFile` roots), one session per file. File codecs
-    /// keep the default; container-store codecs (SQLite) override to
-    /// emit one [`SessionRef`] per stored row.
+    /// file, for `JsonlFile` roots), then [`Codec::sessions_in_file`]
+    /// per candidate. File codecs keep the default; container codecs
+    /// override `sessions_in_file` (or this for store-level listing).
     fn enumerate(&self, root: &HistoryRoot, path: &Path) -> Result<Vec<SessionRef>> {
         match root.store {
             crate::store::StoreKind::JsonlFile
@@ -185,15 +198,11 @@ pub trait Codec {
         } else {
             crate::store::collect_files(path)?
         };
-        Ok(self
-            .select_session_files(files)
-            .into_iter()
-            .map(|p| SessionRef {
-                id: self.session_id(&p),
-                path: p,
-                key: None,
-            })
-            .collect())
+        let mut sessions = Vec::new();
+        for file in self.select_session_files(files) {
+            sessions.extend(self.sessions_in_file(&file)?);
+        }
+        Ok(sessions)
     }
 
     /// Decode one enumerated session. Default delegates to [`Codec::decode`]
