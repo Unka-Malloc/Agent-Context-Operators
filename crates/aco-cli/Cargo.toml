@@ -13,9 +13,17 @@ path = "src/main.rs"
 
 [dependencies]
 aco.workspace = true
-aco-codex = { path = "../aco-codex" }
+aco-antigravity = { path = "../aco-antigravity" }
 aco-claude = { path = "../aco-claude" }
+aco-codex = { path = "../aco-codex" }
+aco-copilot = { path = "../aco-copilot" }
+aco-cursor = { path = "../aco-cursor" }
 aco-dsh = { path = "../aco-dsh" }
+aco-hermes = { path = "../aco-hermes" }
+aco-kilo-code = { path = "../aco-kilo-code" }
+aco-kimi-code = { path = "../aco-kimi-code" }
+aco-openclaw = { path = "../aco-openclaw" }
+aco-opencode = { path = "../aco-opencode" }
 aco-pi = { path = "../aco-pi" }
 serde_json.workspace = true
 

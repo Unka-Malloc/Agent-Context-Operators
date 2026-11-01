@@ -1,5 +1,4 @@
-use aco::codec::Codec;
-use aco::model::{Body, Conversation, Record, RecordKind};
+use aco::model::{Body, Conversation, RecordKind};
 
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();

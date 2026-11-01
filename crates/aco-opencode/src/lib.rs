@@ -1,0 +1,201 @@
+//! aco codec: the `opencode` (OpenCode) conversation store.
+//!
+//! The a4aa card declares the session root as `opencode-data-store` —
+//! `~/.local/share/opencode`, plus the same store under the
+//! `{xdg_data}`/`{appdata}` homes OpenCode's own tooling honors (the
+//! `opencode-config` roots are inventory, not sessions). OpenCode's data
+//! store holds no bespoke wire format LicoUp knows: session artifacts
+//! land as JSONL/NDJSON event logs, single JSON documents, markdown or
+//! plaintext transcripts, and SQLite databases
+//! (`*.sqlite`/`*.sqlite3`/`*.db`), so every artifact decodes through the
+//! shared [`aco::generic`] lane. This codec contributes the store facts
+//! only: the accepted extension set with LicoUp's exclusions, container
+//! enumeration as one [`SessionRef`] per stored session key, and the
+//! `<session-id>.jsonl` import path under the home store root.
+
+use std::path::{Path, PathBuf};
+
+use aco::codec::{Capability, CapabilityMatrix, Codec, Decoded, Encoded, SessionRef};
+use aco::model::Conversation;
+use aco::store::HistoryRoot;
+use aco::{Error, Result};
+use serde_json::Value;
+
+/// Extensions LicoUp's `opencode` history adapter accepts as
+/// session-shaped artifacts under the store root.
+const ACCEPTED_EXTENSIONS: &[&str] = &[
+    "jsonl", "ndjson", "json", "md", "txt", "log", "sqlite", "sqlite3", "db",
+];
+
+/// Extensions that open as SQLite containers — one database can hold
+/// many sessions keyed by row.
+const SQLITE_EXTENSIONS: &[&str] = &["sqlite", "sqlite3", "db"];
+
+/// The generic wire shape's capability table: user, assistant,
+/// reasoning, tool-call and tool-result are native; `system` rides an
+/// adapted `{"type":"system"}` event line and `meta{usage}` rides an
+/// assistant message's `usage` field — other meta subtypes are reported
+/// dropped by the encoder's projection.
+const CAPABILITIES: CapabilityMatrix = CapabilityMatrix::new(
+    true,
+    [
+        Capability::Native,  // user
+        Capability::Native,  // assistant
+        Capability::Native,  // reasoning
+        Capability::Native,  // tool-call
+        Capability::Native,  // tool-result
+        Capability::Adapted, // system — {"type":"system"} event line
+        Capability::Adapted, // meta — usage rides message.usage; other subtypes drop
+    ],
+);
+
+/// The codec instance aco's registry hands out.
+pub struct OpenCodeCodec;
+
+/// One codec instance for the registry.
+pub fn codec() -> &'static dyn Codec {
+    &OpenCodeCodec
+}
+
+impl Codec for OpenCodeCodec {
+    fn id(&self) -> &'static str {
+        "opencode"
+    }
+
+    fn history(&self) -> Vec<HistoryRoot> {
+        a4aa_opencode::card().history.to_vec()
+    }
+
+    /// The card declares no transcript-usage surface (`transcript:
+    /// None`); usage counters a persisted line carries still decode as
+    /// `meta{usage}` records.
+    fn transcript_usage(&self) -> Option<aco::TranscriptUsage> {
+        a4aa_opencode::card().usage.transcript
+    }
+
+    fn session_kinds(&self) -> &'static [&'static str] {
+        &["opencode-data-store"]
+    }
+
+    fn capabilities(&self) -> &'static CapabilityMatrix {
+        &CAPABILITIES
+    }
+
+    /// The card's `{xdg_data}`/`{xdg_config}`/`{appdata}` templates
+    /// resolve through the host environment the way OpenCode's own
+    /// tooling resolves them; `{home}` roots keep the default
+    /// expansion.
+    fn expand_root(&self, root: &HistoryRoot, home: &Path) -> PathBuf {
+        if let Some(rest) = root.path.strip_prefix("{xdg_data}/") {
+            return env_dir("XDG_DATA_HOME", home.join(".local/share")).join(rest);
+        }
+        if let Some(rest) = root.path.strip_prefix("{xdg_config}/") {
+            return env_dir("XDG_CONFIG_HOME", home.join(".config")).join(rest);
+        }
+        if let Some(rest) = root.path.strip_prefix("{appdata}/") {
+            return env_dir("APPDATA", home.join("AppData/Roaming")).join(rest);
+        }
+        aco::util::expand_home(root.path, home)
+    }
+
+    /// A UUID-bearing directory component names the session where the
+    /// layout carries one; otherwise the file stem — the generic
+    /// identity rule.
+    fn session_id(&self, path: &Path) -> String {
+        aco::generic::session_id(path)
+    }
+
+    /// LicoUp's `accepts_file` extension set for the `opencode`
+    /// adapter, minus its global exclusions (`*.backup`,
+    /// `codebase-external.sqlite`).
+    fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
+        files
+            .into_iter()
+            .filter(|p| {
+                !rejected_file_name(p) && ACCEPTED_EXTENSIONS.contains(&extension_of(p).as_str())
+            })
+            .collect()
+    }
+
+    /// A database file enumerates one [`SessionRef`] per stored session
+    /// key; every other accepted artifact stays one session per file.
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        if SQLITE_EXTENSIONS.contains(&extension_of(path).as_str()) && !rejected_file_name(path) {
+            return Ok(aco::generic::sqlite_session_keys(path)?
+                .into_iter()
+                .map(|key| SessionRef {
+                    id: key.clone(),
+                    path: path.to_path_buf(),
+                    key: Some(key),
+                })
+                .collect());
+        }
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+        }])
+    }
+
+    /// `key = Some(..)` reads that container session; `key = None`
+    /// falls through to the file decoder.
+    fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
+        match &session.key {
+            Some(key) => aco::generic::decode_sqlite(&session.path, Some(key), self.id()),
+            None => self.decode(&session.path),
+        }
+    }
+
+    /// Database artifacts decode through the shared container probe
+    /// (`key = None`); every file format dispatches by extension.
+    fn decode(&self, path: &Path) -> Result<Decoded> {
+        if SQLITE_EXTENSIONS.contains(&extension_of(path).as_str()) {
+            return aco::generic::decode_sqlite(path, None, self.id());
+        }
+        aco::generic::dispatch(path, self.id())
+    }
+
+    fn encode(&self, conversation: &Conversation) -> Result<Encoded> {
+        aco::generic::encode_jsonl(conversation)
+    }
+
+    /// Imported sessions land as `<session-id>.jsonl` under the
+    /// home-relative `opencode-data-store` root.
+    fn store_path(&self, home: &Path, conversation: &Conversation) -> Result<PathBuf> {
+        let root = self
+            .history()
+            .into_iter()
+            .find(|root| root.kind == "opencode-data-store" && root.path.starts_with("{home}"))
+            .map(|root| self.expand_root(&root, home))
+            .ok_or_else(|| Error::Usage("opencode session root undeclared".to_string()))?;
+        Ok(root.join(format!("{}.jsonl", conversation.session_id)))
+    }
+
+    fn redact_line(&self, line: &Value, marker: &str) -> Option<Value> {
+        aco::generic::redact_line(line, marker)
+    }
+}
+
+/// File names LicoUp excludes before extension matching.
+fn rejected_file_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.ends_with(".backup") || name == "codebase-external.sqlite")
+        .unwrap_or(false)
+}
+
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+/// An environment-declared base directory with a home-relative fallback.
+fn env_dir(var: &str, fallback: PathBuf) -> PathBuf {
+    std::env::var(var)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or(fallback)
+}
