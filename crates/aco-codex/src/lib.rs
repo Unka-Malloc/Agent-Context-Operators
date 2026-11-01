@@ -45,25 +45,15 @@ impl Codec for CodexCodec {
     }
 
     /// Store locations come from the `a4aa-codex` card — the descriptor
-    /// stays the single authority; this codec only projects them into
-    /// ACO's `HistoryRoot` vocabulary.
+    /// stays the single authority; `a4aa`'s history vocabulary is `aco`'s
+    /// own (`a4aa::card` re-exports `aco::store`), so the projection is
+    /// the declaration itself.
     fn history(&self) -> Vec<aco::store::HistoryRoot> {
-        a4aa_codex::card()
-            .history
-            .iter()
-            .map(|r| aco::store::HistoryRoot {
-                path: r.path,
-                kind: r.kind,
-                store: match r.store {
-                    a4aa::StoreKind::JsonlFile => aco::store::StoreKind::JsonlFile,
-                    a4aa::StoreKind::JsonlDir => aco::store::StoreKind::JsonlDir,
-                    a4aa::StoreKind::SqliteDb => aco::store::StoreKind::SqliteDb,
-                    a4aa::StoreKind::MarkdownFile => aco::store::StoreKind::MarkdownFile,
-                    a4aa::StoreKind::Directory => aco::store::StoreKind::Directory,
-                    a4aa::StoreKind::Other => aco::store::StoreKind::Other,
-                },
-            })
-            .collect()
+        a4aa_codex::card().history.to_vec()
+    }
+
+    fn transcript_usage(&self) -> Option<aco::TranscriptUsage> {
+        a4aa_codex::card().usage.transcript
     }
 
     fn session_kinds(&self) -> &'static [&'static str] {

@@ -8,9 +8,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+a4aa-claude = { path = "../../../Adapter-For-All-Agents/crates/a4aa-claude" }
 aco.workspace = true
-a4aa.workspace = true
-a4aa-claude = { path = "../../../Adapter-For-All-Agents/crates/a4aa-claude", version = "0.4.1" }
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

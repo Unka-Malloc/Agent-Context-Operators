@@ -21,8 +21,15 @@ conversation are different operations — the second is out of scope here.
 ## Aggregation
 
 Hosts do not need to know this crate exists: `a4aa` aggregates it next to
-`ahe::install` — `a4aa::context` re-exports the whole `aco` API, and the
-per-agent `aco-<agent>` codec crates pull store locations from the same
-`a4aa-<agent>` cards the runtime adapter already uses. One card, one
-store-location authority, two consumers: the driver (a4aa) and the
-artifact operators (aco).
+`ahe::install` — `a4aa::context` re-exports the whole `aco` API. The
+artifact vocabulary — `HistoryRoot`, `StoreKind`, `TranscriptUsage` — is
+owned by `aco::store` and re-exported through `a4aa::card`, so a card and
+a codec speak one type language. Each `a4aa-<agent>` card remains the
+single data authority for where stores live and where persisted token
+counters sit (`UsageSurface.transcript`); an `aco-<agent>` codec projects
+the card's declaration directly — the types *are* ACO's, nothing is
+translated — and exposes the usage spec through
+`Codec::transcript_usage()` so a consumer decodes sessions through ACO
+instead of keeping a parallel store adapter. One card, one data
+authority, two consumers: the driver (a4aa) and the artifact operators
+(aco).

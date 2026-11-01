@@ -99,11 +99,18 @@ pub trait Codec {
     /// Agent id, identical to the a4aa card/dialect id (`codex`, …).
     fn id(&self) -> &'static str;
 
-    /// The agent's declared history surface, expressed in ACO's own
-    /// [`HistoryRoot`] vocabulary. Codecs project the owning descriptor —
-    /// today the `a4aa-<agent>` card — so `aco` core carries no agent
-    /// knowledge and stays dependency-free for re-export through `a4aa`.
+    /// The agent's declared history surface — the codec owns it. a4aa's
+    /// card projects these same constants back for runtime consumers, so
+    /// `aco` core carries no agent knowledge and stays dependency-free
+    /// for re-export through `a4aa`.
     fn history(&self) -> Vec<HistoryRoot>;
+
+    /// Where token counters appear in this store's persisted records, if
+    /// the agent reports any. A usage consumer decodes through ACO and
+    /// applies this spec — it never needs a parallel store adapter.
+    fn transcript_usage(&self) -> Option<crate::store::TranscriptUsage> {
+        None
+    }
 
     /// History kinds from `card().history` that hold *sessions* this
     /// codec reads (e.g. `codex-session-store`). Other declared roots —

@@ -29,9 +29,11 @@ Selectors (`<sel>`): `kind:<tag>`, `index:<a>-<b>`, `id:<record-id>`,
 before writing.
 
 Hosts embedding `a4aa` get these operators for free — `a4aa::context`
-re-exports the whole `aco` API next to `a4aa::hooks`, and each
-`aco-<agent>` codec draws store locations from the same `a4aa-<agent>`
-card the runtime adapter uses.
+re-exports the whole `aco` API next to `a4aa::hooks`. ACO owns the
+artifact vocabulary (`HistoryRoot`, `StoreKind`, `TranscriptUsage`,
+re-exported through `a4aa::card`); each `aco-<agent>` codec draws store
+locations and transcript-usage specs from the same `a4aa-<agent>` card
+the runtime adapter uses — one data authority, two consumers.
 
 ## Crate layout
 

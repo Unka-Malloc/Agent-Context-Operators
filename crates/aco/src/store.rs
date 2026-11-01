@@ -37,6 +37,32 @@ pub enum StoreKind {
     Other,
 }
 
+/// Token-accounting locations inside persisted records — the artifact
+/// half of a4aa's `UsageSurface` (live-wire and hosted counters stay
+/// there). Declared facts only: a counter the agent does not report
+/// stays absent. A usage consumer reads sessions through `decode` plus
+/// this spec — it never needs a parallel store adapter.
+#[derive(Clone, Copy, Debug)]
+pub struct TranscriptUsage {
+    /// `HistoryRoot::kind` holding token records.
+    pub root: &'static str,
+    /// Record discriminator `(dotted path, equals value)` — only matching
+    /// records carry counters. `None`: any record bearing `container` is a
+    /// usage record (for stores that mark usage by presence, not type).
+    pub record: Option<(&'static str, &'static str)>,
+    /// Dotted path to the counter object inside a matching record.
+    pub container: &'static str,
+    /// Field names read as input/prompt tokens; first present wins.
+    pub input: &'static [&'static str],
+    /// Field names read as cached input tokens.
+    pub cached: &'static [&'static str],
+    /// Field names read as output/completion tokens.
+    pub output: &'static [&'static str],
+    /// Field names read as a reported total; empty where the store has
+    /// none — the consumer sums, the declaration never invents a total.
+    pub total: &'static [&'static str],
+}
+
 /// One concrete file belonging to an agent's declared history surface.
 #[derive(Clone, Debug)]
 pub struct StoreFile {

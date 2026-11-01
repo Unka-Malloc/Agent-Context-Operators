@@ -13,7 +13,11 @@ second one is out of scope here.
 
 Every agent's conversation format gets its own codec crate under
 `crates/aco-<agent>`. A codec crate depends on `aco` core and on the
-matching `a4aa-<agent>` descriptor (store locations), and on nothing else.
+matching `a4aa-<agent>` descriptor (store locations and transcript-usage
+specs — the card stays the single data authority; the `HistoryRoot`/
+`StoreKind`/`TranscriptUsage` types are `aco::store`'s own, re-exported
+through `a4aa::card`, so a projection is a field read, not a rewrite),
+and on nothing else.
 Working on one codec must not require changes to a sibling codec.
 
 The canonical conversation model is a **superset** of every agent's

@@ -51,7 +51,6 @@ dependencies = [
 name = "aco-claude"
 version = "0.1.0"
 dependencies = [
- "a4aa",
  "a4aa-claude",
  "aco",
  "serde",
@@ -74,7 +73,6 @@ dependencies = [
 name = "aco-codex"
 version = "0.1.0"
 dependencies = [
- "a4aa",
  "a4aa-codex",
  "aco",
  "serde",
