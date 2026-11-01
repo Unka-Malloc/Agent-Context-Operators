@@ -69,13 +69,15 @@ pub fn run(codecs: &[&dyn Codec], home: &Path, opts: &SearchOptions) -> SearchOu
             out.unreadable_roots
                 .push((codec.id().to_string(), scan.unreadable_roots.clone()));
         }
-        for file in scan.sessions {
+        for entry in scan.sessions {
             out.files_scanned += 1;
-            match codec.decode(&file.path) {
-                Ok(decoded) => collect_hits(*codec, &file, &decoded, &matcher, opts, &mut out.hits),
+            match codec.decode_session(&entry.session) {
+                Ok(decoded) => {
+                    collect_hits(*codec, &entry, &decoded, &matcher, opts, &mut out.hits)
+                }
                 Err(e) => out.decode_errors.push((
                     codec.id().to_string(),
-                    file.path.clone(),
+                    entry.session.path.clone(),
                     e.to_string(),
                 )),
             }
@@ -86,13 +88,13 @@ pub fn run(codecs: &[&dyn Codec], home: &Path, opts: &SearchOptions) -> SearchOu
 
 fn collect_hits(
     codec: &dyn Codec,
-    file: &store::StoreFile,
+    entry: &store::SessionEntry,
     decoded: &crate::Decoded,
     matcher: &Regex,
     opts: &SearchOptions,
     hits: &mut Vec<Hit>,
 ) {
-    let session_id = codec.session_id(&file.path);
+    let session_id = entry.session.id.clone();
     let texts: Vec<String> = decoded
         .conversation
         .records
@@ -125,7 +127,7 @@ fn collect_hits(
         hits.push(Hit {
             agent: codec.id().to_string(),
             session_id: session_id.clone(),
-            path: file.path.clone(),
+            path: entry.session.path.clone(),
             line: decoded.record_lines.get(i).copied().unwrap_or(0) + 1,
             ordinal: rec.ordinal,
             kind: rec.kind(),

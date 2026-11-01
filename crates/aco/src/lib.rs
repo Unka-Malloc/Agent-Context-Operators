@@ -26,4 +26,4 @@ pub use codec::{Capability, CapabilityMatrix, Codec, Decoded, Encoded, Projectio
 pub use error::{Error, Result};
 pub use model::{Attachment, Body, Conversation, Record, RecordKind, FORMAT};
 pub use select::{Selector, Selectors};
-pub use store::{HistoryRoot, StoreFile, StoreKind, StoreScan, TranscriptUsage};
+pub use store::{HistoryRoot, SessionEntry, StoreKind, StoreScan, TranscriptUsage};

@@ -34,8 +34,8 @@ const CAPABILITIES: CapabilityMatrix = CapabilityMatrix::new(
 );
 
 /// One codec instance for the registry.
-pub fn codec() -> PiCodec {
-    PiCodec
+pub fn codec() -> &'static dyn Codec {
+    &PiCodec
 }
 
 impl Codec for PiCodec {

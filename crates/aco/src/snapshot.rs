@@ -55,20 +55,30 @@ pub fn create(home: &Path, codecs: &[&dyn Codec]) -> Result<Manifest> {
     };
     for codec in codecs {
         let scan = store::scan(*codec, home)?;
-        for (i, file) in scan.sessions.iter().enumerate() {
+        // Container sessions share one backing file — copy it once.
+        let mut seen = std::collections::HashSet::new();
+        for (i, entry) in scan.sessions.iter().enumerate() {
+            if !seen.insert(entry.session.path.clone()) {
+                continue;
+            }
             let stored = PathBuf::from(codec.id()).join(format!(
                 "{i:05}-{}",
-                file.path.file_name().unwrap_or_default().to_string_lossy()
+                entry
+                    .session
+                    .path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
             ));
             let dest = dir.join(&stored);
             if let Some(parent) = dest.parent() {
                 fs::create_dir_all(parent).map_err(Error::io(parent))?;
             }
-            fs::copy(&file.path, &dest).map_err(Error::io(&file.path))?;
+            fs::copy(&entry.session.path, &dest).map_err(Error::io(&entry.session.path))?;
             manifest.entries.push(Entry {
                 agent: codec.id().to_string(),
-                kind: file.kind.to_string(),
-                source: file.path.clone(),
+                kind: entry.kind.to_string(),
+                source: entry.session.path.clone(),
                 stored,
             });
         }

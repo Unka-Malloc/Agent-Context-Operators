@@ -369,7 +369,9 @@ fn cmd_import(args: &Args, home: &Path) -> Result<(), Error> {
 fn cmd_edit(args: &Args, home: &Path) -> Result<(), Error> {
     let codec = codec_named(args.require("agent")?)?;
     let session = args.require("session")?;
-    let file = aco::store::resolve_session(codec, home, session)?.path;
+    let file = aco::store::resolve_session(codec, home, session)?
+        .session
+        .path;
     let op = match (args.get("delete"), args.get("redact")) {
         (Some(sel), None) => EditOp::Delete(Selectors::parse(sel)?),
         (None, Some(sel)) => EditOp::Redact {

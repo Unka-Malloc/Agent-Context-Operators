@@ -32,14 +32,13 @@ pub fn list(codecs: &[&dyn Codec], home: &Path) -> Vec<SessionRow> {
         let Ok(scan) = store::scan(*codec, home) else {
             continue;
         };
-        for file in scan.sessions {
-            let session_id = codec.session_id(&file.path);
-            let row = match codec.decode(&file.path) {
+        for entry in scan.sessions {
+            let row = match codec.decode_session(&entry.session) {
                 Ok(d) => SessionRow {
                     agent: codec.id().into(),
-                    session_id,
-                    path: file.path.clone(),
-                    kind: file.kind.into(),
+                    session_id: entry.session.id.clone(),
+                    path: entry.session.path.clone(),
+                    kind: entry.kind.into(),
                     started: d
                         .conversation
                         .records
@@ -51,9 +50,9 @@ pub fn list(codecs: &[&dyn Codec], home: &Path) -> Vec<SessionRow> {
                 },
                 Err(e) => SessionRow {
                     agent: codec.id().into(),
-                    session_id,
-                    path: file.path.clone(),
-                    kind: file.kind.into(),
+                    session_id: entry.session.id.clone(),
+                    path: entry.session.path.clone(),
+                    kind: entry.kind.into(),
                     started: None,
                     records: None,
                     decode_error: Some(e.to_string()),
@@ -68,9 +67,9 @@ pub fn list(codecs: &[&dyn Codec], home: &Path) -> Vec<SessionRow> {
 
 /// `aco export`: resolve + decode → canonical document.
 pub fn export(codec: &dyn Codec, home: &Path, session: &str) -> Result<(Conversation, PathBuf)> {
-    let file = store::resolve_session(codec, home, session)?;
-    let decoded = codec.decode(&file.path)?;
-    Ok((decoded.conversation, file.path))
+    let entry = store::resolve_session(codec, home, session)?;
+    let decoded = codec.decode_session(&entry.session)?;
+    Ok((decoded.conversation, entry.session.path))
 }
 
 /// `aco transform`: decode source, encode target. `session_or_file` is a
@@ -159,7 +158,7 @@ pub fn stores(codecs: &[&dyn Codec], home: &Path) -> Vec<StoreRow> {
             rows.push(StoreRow {
                 agent: codec.id().into(),
                 kind: root.kind,
-                path: util::expand_home(root.path, home),
+                path: codec.expand_root(&root, home),
                 store: format!("{:?}", root.store),
                 sessions: codec.session_kinds().contains(&root.kind),
             });

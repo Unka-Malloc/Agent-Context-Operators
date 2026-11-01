@@ -86,6 +86,22 @@ pub struct Decoded {
     pub skipped: Vec<Skipped>,
 }
 
+/// One addressable session inside a store: a file for file-based
+/// stores, a `(path, key)` pair for container stores such as SQLite
+/// where one database holds many sessions (cursor `composerData:<id>`
+/// rows, copilot `ChatSessions`, …).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionRef {
+    /// The store's own session identifier.
+    pub id: String,
+    /// The backing file (transcript for file stores, database for
+    /// container stores).
+    pub path: PathBuf,
+    /// Container-internal key — table/row selector for SQLite stores;
+    /// `None` when `path` *is* the session.
+    pub key: Option<String>,
+}
+
 /// Output of encoding a conversation into one format.
 #[derive(Debug)]
 pub struct Encoded {
@@ -146,6 +162,44 @@ pub trait Codec {
             .into_iter()
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("jsonl"))
             .collect()
+    }
+
+    /// Enumerate the sessions one concrete root holds. Default:
+    /// `select_session_files` over the recursive walk (or the single
+    /// file, for `JsonlFile` roots), one session per file. File codecs
+    /// keep the default; container-store codecs (SQLite) override to
+    /// emit one [`SessionRef`] per stored row.
+    fn enumerate(&self, root: &HistoryRoot, path: &Path) -> Result<Vec<SessionRef>> {
+        match root.store {
+            crate::store::StoreKind::JsonlFile
+            | crate::store::StoreKind::JsonlDir
+            | crate::store::StoreKind::Directory => {}
+            other => {
+                return Err(crate::Error::Usage(format!(
+                    "store kind {other:?} needs a codec-level enumerator"
+                )))
+            }
+        }
+        let files = if path.is_file() {
+            vec![path.to_path_buf()]
+        } else {
+            crate::store::collect_files(path)?
+        };
+        Ok(self
+            .select_session_files(files)
+            .into_iter()
+            .map(|p| SessionRef {
+                id: self.session_id(&p),
+                path: p,
+                key: None,
+            })
+            .collect())
+    }
+
+    /// Decode one enumerated session. Default delegates to [`Codec::decode`]
+    /// on `session.path`; container codecs read `session.key` instead.
+    fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
+        self.decode(&session.path)
     }
 
     /// Decode one native session file.
