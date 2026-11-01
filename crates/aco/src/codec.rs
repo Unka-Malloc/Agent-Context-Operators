@@ -128,6 +128,17 @@ pub trait Codec {
             .unwrap_or_default()
     }
 
+    /// Which files under a session-holding root are session artifacts —
+    /// and, where the store versions them, which generation wins. The
+    /// scan hands every file it finds; the codec returns the
+    /// authoritative set. Default: every `*.jsonl` file.
+    fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
+        files
+            .into_iter()
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("jsonl"))
+            .collect()
+    }
+
     /// Decode one native session file.
     fn decode(&self, path: &Path) -> Result<Decoded>;
 

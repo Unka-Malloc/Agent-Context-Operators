@@ -93,14 +93,31 @@ pub fn scan(codec: &dyn Codec, home: &Path) -> Result<StoreScan> {
         match root.store {
             StoreKind::JsonlFile if is_session => {
                 if path.is_file() {
-                    scan.sessions.push(StoreFile {
-                        path,
-                        kind: root.kind,
-                    });
+                    scan.sessions
+                        .extend(
+                            codec
+                                .select_session_files(vec![path])
+                                .into_iter()
+                                .map(|path| StoreFile {
+                                    path,
+                                    kind: root.kind,
+                                }),
+                        );
                 }
             }
             StoreKind::JsonlDir | StoreKind::Directory if is_session => {
-                collect_jsonl(&path, root.kind, &mut scan.sessions)?;
+                let mut files = Vec::new();
+                collect_files(&path, &mut files)?;
+                scan.sessions
+                    .extend(
+                        codec
+                            .select_session_files(files)
+                            .into_iter()
+                            .map(|path| StoreFile {
+                                path,
+                                kind: root.kind,
+                            }),
+                    );
             }
             StoreKind::JsonlDir | StoreKind::Directory => {
                 // Declared but non-session root: skipped by design, still
@@ -113,7 +130,7 @@ pub fn scan(codec: &dyn Codec, home: &Path) -> Result<StoreScan> {
     Ok(scan)
 }
 
-fn collect_jsonl(dir: &Path, kind: &'static str, out: &mut Vec<StoreFile>) -> Result<()> {
+fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -124,8 +141,8 @@ fn collect_jsonl(dir: &Path, kind: &'static str, out: &mut Vec<StoreFile>) -> Re
             let p = entry.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                out.push(StoreFile { path: p, kind });
+            } else {
+                out.push(p);
             }
         }
     }

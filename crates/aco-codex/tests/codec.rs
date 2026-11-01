@@ -1,7 +1,7 @@
 //! Codec-level coverage for aco-codex over a fully synthetic rollout
 //! file. Nothing here is real user data.
 
-use aco::{Body, Codec, RecordKind};
+use aco::{Body, RecordKind};
 use std::io::Write;
 
 fn fixture() -> String {

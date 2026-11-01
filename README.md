@@ -42,8 +42,9 @@ the runtime adapter uses — one data authority, two consumers.
   selectors, search/edit/snapshot engines, the `aco-conversation/1`
   document format.
 - `crates/aco-cli` — the `aco` binary and the codec registry.
-- `crates/aco-<agent>` — one codec per agent; depends on `aco` and the
-  matching `a4aa-<agent>` store descriptor only.
+- `crates/aco-<agent>` — one codec per agent (`aco-codex`, `aco-claude`,
+  `aco-dsh` today); depends on `aco` and the matching `a4aa-<agent>` store
+  descriptor only.
 
 ## Install
 

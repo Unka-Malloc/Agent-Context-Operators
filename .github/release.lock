@@ -1,0 +1,17 @@
+# Generated release train for Unka-Malloc/Agent-Context-Operators.
+# Regenerate instead of editing: records which engine revision and
+# which source inputs produced the generated files beside it.
+[generator]
+engine = "release-engine"
+version = "0.1.0"
+
+[source]
+templates = "sha256:b6a14d23e8349f83ef35ef2a38873edd25f1d60d5582a6e7bea6f4c2e6346675"
+declaration = "sha256:3dcff7291456637c2d2bf6de22ea4e54ea8fc3a2f87d22fc73dc2a2a52b84113"
+
+[outputs]
+".github/workflows/verify.yml" = "sha256:cac9b583b4560e749e55cd18aa2f0286f7b01201093db89e882b6544c2ef22c9"
+".github/workflows/publish.yml" = "sha256:66e3ed483d6d695cb3e4768cb0f018eb741d0d6460ed340614e97a4a499aeb6e"
+".github/workflows/ci.yml" = "sha256:219b98ba975343cd3353a8c50f73c3e645777e1f0fb5f90916d7389776a56b9c"
+".github/release.py" = "sha256:b364478c4ea7f9f8c8767df981ab7e59bda5e8dc8250b7826a912c107da75f30"
+".github/test_release.py" = "sha256:beec2aa7c96f7f828bd89420ed3de91e2b2a83fd337fdc721258aed128cda330"

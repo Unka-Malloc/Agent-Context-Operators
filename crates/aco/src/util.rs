@@ -47,6 +47,55 @@ pub fn today() -> String {
     now_rfc3339()[..10].to_string()
 }
 
+/// Epoch milliseconds → RFC 3339 UTC with millisecond precision — the
+/// timestamp shape session stores record per event.
+pub fn epoch_ms_rfc3339(ms: u64) -> String {
+    let secs = ms / 1000;
+    let millis = ms % 1000;
+    let days = (secs / 86_400) as i64;
+    let tod = secs % 86_400;
+    let (y, m, d) = civil_from_days(days);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{millis:03}Z",
+        tod / 3600,
+        (tod % 3600) / 60,
+        tod % 60
+    )
+}
+
+/// RFC 3339 UTC (`…Z`) → epoch milliseconds — the inverse of
+/// [`epoch_ms_rfc3339`] for stores that stamp events in milliseconds.
+pub fn rfc3339_to_epoch_ms(ts: &str) -> Option<u64> {
+    let ts = ts.strip_suffix('Z')?;
+    let (date, time) = ts.split_once('T')?;
+    let mut d = date.split('-');
+    let (y, m, day) = (
+        d.next()?.parse::<i64>().ok()?,
+        d.next()?.parse::<i64>().ok()?,
+        d.next()?.parse::<i64>().ok()?,
+    );
+    let (time, frac) = time.split_once('.').unwrap_or((time, "0"));
+    let mut t = time.split(':');
+    let (h, min, s) = (
+        t.next()?.parse::<u64>().ok()?,
+        t.next()?.parse::<u64>().ok()?,
+        t.next()?.parse::<u64>().ok()?,
+    );
+    let frac = format!("{:0<3}", &frac[..frac.len().min(3)]);
+    let millis = frac[..3].parse::<u64>().ok()?;
+    let days = days_from_civil(y, m as u32, day as u32);
+    Some(((days * 86_400 + (h * 3600 + min * 60 + s) as i64) * 1000 + millis as i64) as u64)
+}
+
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) as u64 + 2) / 5 + d as u64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe as i64 - 719_468
+}
+
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;

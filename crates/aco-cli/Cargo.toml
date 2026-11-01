@@ -15,6 +15,7 @@ path = "src/main.rs"
 aco.workspace = true
 aco-codex = { path = "../aco-codex" }
 aco-claude = { path = "../aco-claude" }
+aco-dsh = { path = "../aco-dsh" }
 serde_json.workspace = true
 
 [dev-dependencies]
