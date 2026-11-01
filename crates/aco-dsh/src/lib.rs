@@ -105,6 +105,21 @@ impl Codec for DshCodec {
             .unwrap_or_default()
     }
 
+    /// `DSH_HOME` relocates the `.dsh` tree — the same override the
+    /// Harness's own tooling honors.
+    fn expand_root(&self, root: &aco::HistoryRoot, home: &Path) -> PathBuf {
+        if let Some(dsh_home) = std::env::var("DSH_HOME")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .map(PathBuf::from)
+        {
+            if root.kind == "deepseek-harness-session-store" {
+                return dsh_home.join("sessions");
+            }
+        }
+        aco::util::expand_home(root.path, home)
+    }
+
     /// Only `session[.vN].jsonl[.zstd]` artifacts count, and only the
     /// newest generation of each session directory is authoritative.
     fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {

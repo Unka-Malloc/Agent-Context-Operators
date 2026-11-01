@@ -89,7 +89,7 @@ pub fn scan(codec: &dyn Codec, home: &Path) -> Result<StoreScan> {
     };
     for root in codec.history() {
         let is_session = codec.session_kinds().contains(&root.kind);
-        let path = util::expand_home(root.path, home);
+        let path = codec.expand_root(&root, home);
         match root.store {
             StoreKind::JsonlFile if is_session => {
                 if path.is_file() {

@@ -44,6 +44,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "a4aa-pi"
+version = "0.4.1"
+dependencies = [
+ "a4aa",
+]
+
+[[package]]
 name = "aco"
 version = "0.1.0"
 dependencies = [
@@ -74,6 +81,7 @@ dependencies = [
  "aco-claude",
  "aco-codex",
  "aco-dsh",
+ "aco-pi",
  "serde_json",
  "tempfile",
 ]
@@ -100,6 +108,17 @@ dependencies = [
  "serde_json",
  "tempfile",
  "zstd",
+]
+
+[[package]]
+name = "aco-pi"
+version = "0.1.0"
+dependencies = [
+ "a4aa-pi",
+ "aco",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

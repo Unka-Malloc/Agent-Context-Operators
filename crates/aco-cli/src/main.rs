@@ -12,7 +12,12 @@ use aco::search::{self, SearchOptions};
 use aco::{ops, snapshot, Codec, Error, Selectors};
 
 fn registry() -> Vec<&'static dyn Codec> {
-    vec![aco_codex::codec(), aco_claude::codec(), aco_dsh::codec()]
+    vec![
+        aco_codex::codec(),
+        aco_claude::codec(),
+        aco_dsh::codec(),
+        aco_pi::codec(),
+    ]
 }
 
 fn codec_named(name: &str) -> Result<&'static dyn Codec, Error> {

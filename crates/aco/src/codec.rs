@@ -128,6 +128,15 @@ pub trait Codec {
             .unwrap_or_default()
     }
 
+    /// Resolve one declared root's `{home}` template to a concrete path.
+    /// Codecs whose store honors a home-env override (`DSH_HOME`,
+    /// `PI_CODING_AGENT_SESSION_DIR`, `KIMI_CODE_HOME`, …) apply the
+    /// override here — it is the same location fact the card declares,
+    /// resolved the way the agent's own tooling resolves it.
+    fn expand_root(&self, root: &HistoryRoot, home: &Path) -> PathBuf {
+        crate::util::expand_home(root.path, home)
+    }
+
     /// Which files under a session-holding root are session artifacts —
     /// and, where the store versions them, which generation wins. The
     /// scan hands every file it finds; the codec returns the

@@ -16,6 +16,7 @@ aco.workspace = true
 aco-codex = { path = "../aco-codex" }
 aco-claude = { path = "../aco-claude" }
 aco-dsh = { path = "../aco-dsh" }
+aco-pi = { path = "../aco-pi" }
 serde_json.workspace = true
 
 [dev-dependencies]

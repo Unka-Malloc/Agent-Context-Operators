@@ -1,0 +1,17 @@
+[package]
+name = "aco-pi"
+description = "aco codec: the `pi` (Pi coding agent) conversation store (`~/.pi/agent/sessions` JSONL transcripts, `PI_CODING_AGENT_SESSION_DIR` override) — decode, encode, redact and import-path knowledge."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+a4aa-pi = { path = "../../../Adapter-For-All-Agents/crates/a4aa-pi", version = "0.4.1" }
+aco.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
