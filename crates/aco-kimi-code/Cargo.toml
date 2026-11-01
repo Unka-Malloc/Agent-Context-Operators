@@ -1,15 +1,18 @@
 [package]
-name = "aco-kimi-code"
+name = "acop-kimi-code"
 description = "aco codec: the `kimicode` (Kimi Code) conversation store (`~/.kimi-code` session directories holding `agents/<id>/wire.jsonl` wire logs plus `state.json`, `KIMI_CODE_HOME` override) — decode, encode, redact and import-path knowledge."
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "aco_kimi_code"
+
 [dependencies]
 a4aa-kimi-code = { path = "../../../Adapter-For-All-Agents/crates/a4aa-kimi-code", version = "0.4.1" }
-aco.workspace = true
+acop.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

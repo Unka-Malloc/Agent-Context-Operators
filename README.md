@@ -31,7 +31,7 @@ before writing.
 Hosts embedding `a4aa` get these operators for free — `a4aa::context`
 re-exports the whole `aco` API next to `a4aa::hooks`. ACO owns the
 artifact vocabulary (`HistoryRoot`, `StoreKind`, `TranscriptUsage`,
-re-exported through `a4aa::card`); each `aco-<agent>` codec draws store
+re-exported through `a4aa::card`); each `acop-<agent>` codec draws store
 locations and transcript-usage specs from the same `a4aa-<agent>` card
 the runtime adapter uses — one data authority, two consumers.
 
@@ -42,10 +42,10 @@ the runtime adapter uses — one data authority, two consumers.
   selectors, search/edit/snapshot engines, the `aco-conversation/1`
   document format.
 - `crates/aco-cli` — the `aco` binary and the codec registry.
-- `crates/aco-<agent>` — one codec per agent (`aco-antigravity`,
-  `aco-claude`, `aco-codex`, `aco-copilot`, `aco-cursor`, `aco-dsh`,
-  `aco-hermes`, `aco-kilo-code`, `aco-kimi-code`, `aco-openclaw`,
-  `aco-opencode`, `aco-pi`); depends on `aco` and the matching
+- `crates/aco-<agent>` — one codec per agent (`acop-antigravity`,
+  `acop-claude`, `acop-codex`, `acop-copilot`, `acop-cursor`, `acop-dsh`,
+  `acop-hermes`, `acop-kilo-code`, `acop-kimi-code`, `acop-openclaw`,
+  `acop-opencode`, `acop-pi`); depends on `acop` and the matching
   `a4aa-<agent>` store descriptor only.
 
 ## Install

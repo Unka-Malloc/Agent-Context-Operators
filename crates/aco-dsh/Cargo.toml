@@ -1,15 +1,18 @@
 [package]
-name = "aco-dsh"
+name = "acop-dsh"
 description = "aco codec: the `dsh` (DeepSeek Harness) conversation store (`~/.dsh/sessions` versioned session logs, plain or concatenated-Zstandard) — decode, encode, redact and import-path knowledge."
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "aco_dsh"
+
 [dependencies]
 a4aa-dsh = { path = "../../../Adapter-For-All-Agents/crates/a4aa-dsh", version = "0.4.1" }
-aco.workspace = true
+acop.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 zstd = "0.13"

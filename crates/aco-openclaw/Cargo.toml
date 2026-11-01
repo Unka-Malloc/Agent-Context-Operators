@@ -1,15 +1,18 @@
 [package]
-name = "aco-openclaw"
+name = "acop-openclaw"
 description = "aco codec: the `openclaw` (OpenClaw) conversation store (`~/.openclaw` — jsonl/json/text transcripts and sqlite containers decoded through the shared generic lane) — decode, encode, redact and import-path knowledge."
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "aco_openclaw"
+
 [dependencies]
 a4aa-open-claw = { path = "../../../Adapter-For-All-Agents/crates/a4aa-open-claw", version = "0.4.1" }
-aco.workspace = true
+acop.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

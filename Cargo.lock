@@ -5,25 +5,6 @@ version = 4
 [[package]]
 name = "a4aa"
 version = "0.4.1"
-dependencies = [
- "aco",
- "agent-client-protocol",
- "ahe",
- "async-trait",
- "command-group",
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "token-usage-detector",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "a4aa"
-version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f762d511b2021e55912e2917f0c81e49c53653060ea340ad08e89ec6cd574a10"
 dependencies = [
@@ -40,24 +21,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "a4aa"
+version = "0.4.2"
+dependencies = [
+ "acop",
+ "agent-client-protocol",
+ "ahe",
+ "async-trait",
+ "command-group",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "token-usage-detector",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "a4aa-antigravity"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-claude"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-codex"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
@@ -66,21 +66,21 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2c2c515b414972e2826ff6d0d0c0aed001b60524baa70a31187acb50588f8c3"
 dependencies = [
- "a4aa 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "a4aa 0.4.1",
 ]
 
 [[package]]
 name = "a4aa-cursor"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-dsh"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
  "serde_json",
 ]
 
@@ -88,47 +88,47 @@ dependencies = [
 name = "a4aa-hermes"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-kilo-code"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-kimi-code"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-open-claw"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-opencode"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
 name = "a4aa-pi"
 version = "0.4.1"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2",
 ]
 
 [[package]]
-name = "aco"
-version = "0.1.0"
+name = "acop"
+version = "0.1.2"
 dependencies = [
  "regex",
  "rusqlite",
@@ -140,11 +140,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-antigravity"
-version = "0.1.0"
+name = "acop-antigravity"
+version = "0.1.2"
 dependencies = [
  "a4aa-antigravity",
- "aco",
+ "acop",
  "rusqlite",
  "serde",
  "serde_json",
@@ -152,43 +152,43 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-claude"
-version = "0.1.0"
+name = "acop-claude"
+version = "0.1.2"
 dependencies = [
  "a4aa-claude",
- "aco",
+ "acop",
  "serde",
  "serde_json",
  "uuid",
 ]
 
 [[package]]
-name = "aco-cli"
-version = "0.1.0"
+name = "acop-cli"
+version = "0.1.2"
 dependencies = [
- "aco",
- "aco-antigravity",
- "aco-claude",
- "aco-codex",
- "aco-copilot",
- "aco-cursor",
- "aco-dsh",
- "aco-hermes",
- "aco-kilo-code",
- "aco-kimi-code",
- "aco-openclaw",
- "aco-opencode",
- "aco-pi",
+ "acop",
+ "acop-antigravity",
+ "acop-claude",
+ "acop-codex",
+ "acop-copilot",
+ "acop-cursor",
+ "acop-dsh",
+ "acop-hermes",
+ "acop-kilo-code",
+ "acop-kimi-code",
+ "acop-openclaw",
+ "acop-opencode",
+ "acop-pi",
  "serde_json",
  "tempfile",
 ]
 
 [[package]]
-name = "aco-codex"
-version = "0.1.0"
+name = "acop-codex"
+version = "0.1.2"
 dependencies = [
  "a4aa-codex",
- "aco",
+ "acop",
  "serde",
  "serde_json",
  "tempfile",
@@ -196,11 +196,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-copilot"
-version = "0.1.0"
+name = "acop-copilot"
+version = "0.1.2"
 dependencies = [
  "a4aa-copilot",
- "aco",
+ "acop",
  "rusqlite",
  "serde",
  "serde_json",
@@ -208,11 +208,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-cursor"
-version = "0.1.0"
+name = "acop-cursor"
+version = "0.1.2"
 dependencies = [
  "a4aa-cursor",
- "aco",
+ "acop",
  "rusqlite",
  "serde",
  "serde_json",
@@ -220,11 +220,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-dsh"
-version = "0.1.0"
+name = "acop-dsh"
+version = "0.1.2"
 dependencies = [
  "a4aa-dsh",
- "aco",
+ "acop",
  "serde",
  "serde_json",
  "tempfile",
@@ -232,11 +232,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-hermes"
-version = "0.1.0"
+name = "acop-hermes"
+version = "0.1.2"
 dependencies = [
  "a4aa-hermes",
- "aco",
+ "acop",
  "rusqlite",
  "serde",
  "serde_json",
@@ -244,11 +244,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-kilo-code"
-version = "0.1.0"
+name = "acop-kilo-code"
+version = "0.1.2"
 dependencies = [
  "a4aa-kilo-code",
- "aco",
+ "acop",
  "rusqlite",
  "serde",
  "serde_json",
@@ -256,22 +256,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-kimi-code"
-version = "0.1.0"
+name = "acop-kimi-code"
+version = "0.1.2"
 dependencies = [
  "a4aa-kimi-code",
- "aco",
+ "acop",
  "serde",
  "serde_json",
  "tempfile",
 ]
 
 [[package]]
-name = "aco-openclaw"
-version = "0.1.0"
+name = "acop-openclaw"
+version = "0.1.2"
 dependencies = [
  "a4aa-open-claw",
- "aco",
+ "acop",
  "rusqlite",
  "serde",
  "serde_json",
@@ -279,11 +279,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-opencode"
-version = "0.1.0"
+name = "acop-opencode"
+version = "0.1.2"
 dependencies = [
  "a4aa-opencode",
- "aco",
+ "acop",
  "rusqlite",
  "serde",
  "serde_json",
@@ -291,11 +291,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aco-pi"
-version = "0.1.0"
+name = "acop-pi"
+version = "0.1.2"
 dependencies = [
  "a4aa-pi",
- "aco",
+ "acop",
  "serde",
  "serde_json",
  "tempfile",

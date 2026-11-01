@@ -12,7 +12,7 @@ second one is out of scope here.
 ## Codec independence (hard rule)
 
 Every agent's conversation format gets its own codec crate under
-`crates/aco-<agent>`. A codec crate depends on `aco` core and on the
+`crates/aco-<agent>`. A codec crate depends on `acop` core and on the
 matching `a4aa-<agent>` descriptor (store locations and transcript-usage
 specs — the card stays the single data authority; the `HistoryRoot`/
 `StoreKind`/`TranscriptUsage` types are `aco::store`'s own, re-exported

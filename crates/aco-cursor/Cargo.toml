@@ -1,15 +1,18 @@
 [package]
-name = "aco-cursor"
+name = "acop-cursor"
 description = "aco codec: the `cursor` conversation store (CLI `store.db` chat blobs, `agent-transcripts` JSONL, IDE `state.vscdb` composer/bubble rows) — enumerate, decode, encode, redact and import-path knowledge."
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "aco_cursor"
+
 [dependencies]
 a4aa-cursor = { path = "../../../Adapter-For-All-Agents/crates/a4aa-cursor", version = "0.4.1" }
-aco.workspace = true
+acop.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rusqlite = { version = "0.40", features = ["bundled"] }

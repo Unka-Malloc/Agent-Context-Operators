@@ -1,7 +1,7 @@
 [package]
-name = "aco"
+name = "acop"
 description = "Agent Context Operators — canonical conversation model, store discovery, codec contract, and the search/edit/snapshot/import/export/transform operators over agent session artifacts."
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -9,6 +9,9 @@ repository.workspace = true
 readme = "../../README.md"
 keywords = ["agent", "conversation", "session", "history", "interop"]
 categories = ["data-structures", "parser-implementations"]
+
+[lib]
+name = "aco"
 
 [dependencies]
 serde.workspace = true

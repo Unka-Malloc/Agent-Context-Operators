@@ -1,15 +1,18 @@
 [package]
-name = "aco-codex"
+name = "acop-codex"
 description = "aco codec: the `codex` conversation store (`~/.codex/sessions` rollout JSONL) — decode, encode, redact and import-path knowledge."
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "aco_codex"
+
 [dependencies]
 a4aa-codex = { path = "../../../Adapter-For-All-Agents/crates/a4aa-codex", version = "0.4.1" }
-aco.workspace = true
+acop.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

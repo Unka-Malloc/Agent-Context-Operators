@@ -1,15 +1,18 @@
 [package]
-name = "aco-opencode"
+name = "acop-opencode"
 description = "aco codec: the `opencode` (OpenCode) conversation store (`~/.local/share/opencode` data store — jsonl/json/text transcripts and sqlite containers decoded through the shared generic lane) — decode, encode, redact and import-path knowledge."
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "aco_opencode"
+
 [dependencies]
 a4aa-opencode = { path = "../../../Adapter-For-All-Agents/crates/a4aa-opencode", version = "0.4.1" }
-aco.workspace = true
+acop.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
