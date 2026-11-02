@@ -102,6 +102,10 @@ fn usage_surface() -> Option<acop::store::TranscriptUsage> {
             cached: usage.cached,
             output: usage.output,
             total: usage.total,
+            // The published card predates the temporality field; copilot
+            // transcript counters are per-record until the card republishes
+            // and declares otherwise.
+            temporality: acop::store::UsageTemporality::Delta,
         })
 }
 

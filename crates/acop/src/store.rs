@@ -37,6 +37,17 @@ pub enum StoreKind {
     Other,
 }
 
+/// Whether a counter reading is the change over its window or a running
+/// total since the series origin — the declaration a store owes so a
+/// consumer never has to guess which shape a field is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UsageTemporality {
+    /// The record reports the usage of its own turn/message.
+    Delta,
+    /// The record reports a running total inside one series.
+    Cumulative,
+}
+
 /// Token-accounting locations inside persisted records — the artifact
 /// half of a4aa's `UsageSurface` (live-wire and hosted counters stay
 /// there). Declared facts only: a counter the agent does not report
@@ -61,6 +72,9 @@ pub struct TranscriptUsage {
     /// Field names read as a reported total; empty where the store has
     /// none — the consumer sums, the declaration never invents a total.
     pub total: &'static [&'static str],
+    /// Whether the counters are per-record deltas or a running series —
+    /// a fact the store declares, never something the consumer infers.
+    pub temporality: UsageTemporality,
 }
 
 /// One session the codec enumerated inside an agent's declared history

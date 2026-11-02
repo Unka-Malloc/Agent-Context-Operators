@@ -29,4 +29,6 @@ pub use codec::{
 pub use error::{Error, Result};
 pub use model::{Attachment, Body, Conversation, ForkOrigin, Record, RecordKind, FORMAT};
 pub use select::{Selector, Selectors};
-pub use store::{HistoryRoot, SessionEntry, StoreKind, StoreScan, TranscriptUsage};
+pub use store::{
+    HistoryRoot, SessionEntry, StoreKind, StoreScan, TranscriptUsage, UsageTemporality,
+};
