@@ -2,7 +2,7 @@
 
 ## Boundary (hard rule)
 
-ACO operates on conversation artifacts an agent has already produced:
+ACOP operates on conversation artifacts an agent has already produced:
 files and stores on disk. Runtime concerns — hook evaluation, injecting
 messages into a live session, intercepting a running turn — belong to the
 Agent Hook Engine, never to this repository. Editing a produced artifact
@@ -12,10 +12,10 @@ second one is out of scope here.
 ## Codec independence (hard rule)
 
 Every agent's conversation format gets its own codec crate under
-`crates/aco-<agent>`. A codec crate depends on `acop` core and on the
+`crates/acop-<agent>`. A codec crate depends on `acop` core and on the
 matching `a4aa-<agent>` descriptor (store locations and transcript-usage
 specs — the card stays the single data authority; the `HistoryRoot`/
-`StoreKind`/`TranscriptUsage` types are `aco::store`'s own, re-exported
+`StoreKind`/`TranscriptUsage` types are `acop::store`'s own, re-exported
 through `a4aa::card`, so a projection is a field read, not a rewrite),
 and on nothing else.
 Working on one codec must not require changes to a sibling codec.

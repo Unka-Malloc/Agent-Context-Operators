@@ -1,0 +1,21 @@
+[package]
+name = "acop-copilot"
+description = "acop codec: the `copilot` (GitHub Copilot) conversation store (`~/.copilot` session-state `events.jsonl` transcripts, the `session-store.db` index, VS Code `state.vscdb` `chatSessions` rows) — decode, encode, redact and import-path knowledge."
+version = "0.1.2"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "aco_copilot"
+
+[dependencies]
+a4aa-copilot = "=0.4.1"
+acop.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

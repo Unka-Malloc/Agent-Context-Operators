@@ -4,11 +4,11 @@ version = 4
 
 [[package]]
 name = "a4aa"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f762d511b2021e55912e2917f0c81e49c53653060ea340ad08e89ec6cd574a10"
+version = "0.4.2"
 dependencies = [
+ "acop 0.1.2",
  "agent-client-protocol",
+ "ahe 0.1.2",
  "async-trait",
  "command-group",
  "libc",
@@ -16,6 +16,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "token-usage-detector 0.2.1",
  "tokio",
  "tokio-util",
 ]
@@ -23,10 +24,12 @@ dependencies = [
 [[package]]
 name = "a4aa"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8ade488fcf68bf8a0f5ec870e419421233026455aaf6e50e7af4b7757d0f96f"
 dependencies = [
- "acop",
+ "acop 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "agent-client-protocol",
- "ahe",
+ "ahe 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "async-trait",
  "command-group",
  "libc",
@@ -34,7 +37,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
- "token-usage-detector",
+ "token-usage-detector 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "tokio-util",
 ]
@@ -66,7 +69,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2c2c515b414972e2826ff6d0d0c0aed001b60524baa70a31187acb50588f8c3"
 dependencies = [
- "a4aa 0.4.1",
+ "a4aa 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -140,11 +143,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "acop"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00b69a4ed0bd35ebe0ed867b13718b9232822021e08ce942ac79483a5df1a649"
+dependencies = [
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "acop-antigravity"
 version = "0.1.2"
 dependencies = [
  "a4aa-antigravity",
- "acop",
+ "acop 0.1.2",
  "rusqlite",
  "serde",
  "serde_json",
@@ -156,7 +173,7 @@ name = "acop-claude"
 version = "0.1.2"
 dependencies = [
  "a4aa-claude",
- "acop",
+ "acop 0.1.2",
  "serde",
  "serde_json",
  "uuid",
@@ -166,7 +183,7 @@ dependencies = [
 name = "acop-cli"
 version = "0.1.2"
 dependencies = [
- "acop",
+ "acop 0.1.2",
  "acop-antigravity",
  "acop-claude",
  "acop-codex",
@@ -188,7 +205,7 @@ name = "acop-codex"
 version = "0.1.2"
 dependencies = [
  "a4aa-codex",
- "acop",
+ "acop 0.1.2",
  "serde",
  "serde_json",
  "tempfile",
@@ -200,7 +217,7 @@ name = "acop-copilot"
 version = "0.1.2"
 dependencies = [
  "a4aa-copilot",
- "acop",
+ "acop 0.1.2",
  "rusqlite",
  "serde",
  "serde_json",
@@ -212,7 +229,7 @@ name = "acop-cursor"
 version = "0.1.2"
 dependencies = [
  "a4aa-cursor",
- "acop",
+ "acop 0.1.2",
  "rusqlite",
  "serde",
  "serde_json",
@@ -224,7 +241,7 @@ name = "acop-dsh"
 version = "0.1.2"
 dependencies = [
  "a4aa-dsh",
- "acop",
+ "acop 0.1.2",
  "serde",
  "serde_json",
  "tempfile",
@@ -236,7 +253,7 @@ name = "acop-hermes"
 version = "0.1.2"
 dependencies = [
  "a4aa-hermes",
- "acop",
+ "acop 0.1.2",
  "rusqlite",
  "serde",
  "serde_json",
@@ -248,7 +265,7 @@ name = "acop-kilo-code"
 version = "0.1.2"
 dependencies = [
  "a4aa-kilo-code",
- "acop",
+ "acop 0.1.2",
  "rusqlite",
  "serde",
  "serde_json",
@@ -260,7 +277,7 @@ name = "acop-kimi-code"
 version = "0.1.2"
 dependencies = [
  "a4aa-kimi-code",
- "acop",
+ "acop 0.1.2",
  "serde",
  "serde_json",
  "tempfile",
@@ -271,7 +288,7 @@ name = "acop-openclaw"
 version = "0.1.2"
 dependencies = [
  "a4aa-open-claw",
- "acop",
+ "acop 0.1.2",
  "rusqlite",
  "serde",
  "serde_json",
@@ -283,7 +300,7 @@ name = "acop-opencode"
 version = "0.1.2"
 dependencies = [
  "a4aa-opencode",
- "acop",
+ "acop 0.1.2",
  "rusqlite",
  "serde",
  "serde_json",
@@ -295,7 +312,7 @@ name = "acop-pi"
 version = "0.1.2"
 dependencies = [
  "a4aa-pi",
- "acop",
+ "acop 0.1.2",
  "serde",
  "serde_json",
  "tempfile",
@@ -345,6 +362,17 @@ dependencies = [
 [[package]]
 name = "ahe"
 version = "0.1.2"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ahe"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "207b5d84d02834860934fad1e517bb1f1df4df2e0a4cb29129d95e4e674265f0"
 dependencies = [
  "regex",
  "serde",
@@ -1483,6 +1511,16 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 [[package]]
 name = "token-usage-detector"
 version = "0.2.1"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "token-usage-detector"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6157099dcf5de1d6c54612e5600d562454935cb7c27f15431cb7d0d34ba87dd"
 dependencies = [
  "serde",
  "serde_json",

@@ -1,0 +1,535 @@
+//! The `codex` codec: `~/.codex/sessions/**/rollout-*.jsonl` files.
+//!
+//! Native record shape: `{timestamp, type, payload}` per line.
+//! `response_item` payloads carry the conversation (messages, reasoning,
+//! tool calls/outputs); `session_meta`/`turn_context`/`world_state`/
+//! `token_usage_record` carry metadata; `event_msg` lines are UI
+//! projections of the same records and decode as `meta` so an exported
+//! document never double-counts content.
+
+use std::path::{Path, PathBuf};
+
+use acop::codec::SessionRef;
+use acop::{
+    Attachment, Body, Capability, CapabilityMatrix, Codec, Conversation, Decoded, Encoded, Error,
+    Record, Result, Skipped,
+};
+use serde_json::{json, Value};
+
+const CAPS: CapabilityMatrix = CapabilityMatrix::new(
+    true,
+    [
+        Capability::Native,      // user
+        Capability::Native,      // assistant
+        Capability::Adapted,     // reasoning (summary only; encrypted blobs are not reproducible)
+        Capability::Adapted,     // tool-call (emitted as custom_tool_call)
+        Capability::Adapted,     // tool-result (emitted as custom_tool_call_output)
+        Capability::Adapted,     // system (emitted as role=developer message)
+        Capability::Unsupported, // meta
+    ],
+);
+
+const SESSION_KINDS: &[&str] = &["codex-session-store", "codex-archived-session-store"];
+
+pub struct CodexCodec;
+
+pub const CODEC: CodexCodec = CodexCodec;
+
+/// The codec as a trait object for registries.
+pub fn codec() -> &'static dyn Codec {
+    &CODEC
+}
+
+impl Codec for CodexCodec {
+    fn id(&self) -> &'static str {
+        "codex"
+    }
+
+    /// Store locations come from the `a4aa-codex` card — the descriptor
+    /// stays the single authority; `a4aa`'s history vocabulary is `acop`'s
+    /// own (`a4aa::card` re-exports `acop::store`), so the projection is
+    /// the declaration itself.
+    fn history(&self) -> Vec<acop::store::HistoryRoot> {
+        a4aa_codex::card().history.to_vec()
+    }
+
+    fn transcript_usage(&self) -> Option<acop::TranscriptUsage> {
+        a4aa_codex::card().usage.transcript
+    }
+
+    fn session_kinds(&self) -> &'static [&'static str] {
+        SESSION_KINDS
+    }
+
+    fn capabilities(&self) -> &'static CapabilityMatrix {
+        &CAPS
+    }
+
+    /// `rollout-<ts>-<uuid>` → `<uuid>`; other stems pass through.
+    fn session_id(&self, path: &Path) -> String {
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        match stem.strip_prefix("rollout-") {
+            Some(rest) if rest.len() >= 36 => rest[rest.len() - 36..].to_string(),
+            _ => stem,
+        }
+    }
+
+    /// Codex archives natively by relocating the rollout under
+    /// `~/.codex/archived_sessions/` — `thread/unarchive` is its return
+    /// path, and the file stays enumerable under the archived root.
+    fn archive_session(&self, session: &SessionRef, home: &Path, dry_run: bool) -> Result<bool> {
+        if session.key.is_some() || !session.path.is_file() {
+            return Ok(false);
+        }
+        let Some(archived) = self
+            .history()
+            .iter()
+            .find(|root| root.kind == "codex-archived-session-store")
+            .map(|root| self.expand_root(root, home))
+        else {
+            return Ok(false);
+        };
+        if session.path.starts_with(&archived) {
+            return Ok(true); // already archived
+        }
+        let Some(name) = session.path.file_name() else {
+            return Ok(false);
+        };
+        if dry_run {
+            return Ok(true);
+        }
+        std::fs::create_dir_all(&archived).map_err(Error::io(&archived))?;
+        std::fs::rename(&session.path, archived.join(name)).map_err(Error::io(&session.path))?;
+        Ok(true)
+    }
+
+    /// `.json` artifacts decode through the shared document lane —
+    /// codex rollouts are `.jsonl`, so a `.json` file is a generic
+    /// document hosted under the codex adapter.
+    fn decode(&self, path: &Path) -> Result<Decoded> {
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
+            return acop::generic::decode_json_document(path, "codex");
+        }
+        let text = std::fs::read_to_string(path).map_err(Error::io(path))?;
+        let mut conv = Conversation::new(self.session_id(path));
+        conv.agent = Some("codex".into());
+        let mut record_lines = Vec::new();
+        let mut skipped = Vec::new();
+        let mut line_count = 0usize;
+        let mut saw_rollout = false;
+
+        for (idx, raw) in text.lines().enumerate() {
+            line_count = idx + 1;
+            if raw.trim().is_empty() {
+                continue;
+            }
+            let line: Value = serde_json::from_str(raw).map_err(|e| Error::Decode {
+                path: path.to_path_buf(),
+                line: idx + 1,
+                message: e.to_string(),
+            })?;
+            let ts = line
+                .get("timestamp")
+                .and_then(Value::as_str)
+                .map(String::from);
+            let ty = line.get("type").and_then(Value::as_str).unwrap_or("");
+            let payload = line.get("payload").cloned().unwrap_or(Value::Null);
+            saw_rollout |= matches!(
+                ty,
+                "session_meta"
+                    | "response_item"
+                    | "event_msg"
+                    | "turn_context"
+                    | "world_state"
+                    | "token_usage_record"
+            );
+            let ptype = payload.get("type").and_then(Value::as_str).unwrap_or("");
+            let native_id = payload.get("id").and_then(Value::as_str).map(String::from);
+
+            let body = match (ty, ptype) {
+                ("session_meta", _) => {
+                    if let Some(id) = payload.get("id").and_then(Value::as_str) {
+                        conv.session_id = id.to_string();
+                    }
+                    conv.cwd = payload
+                        .get("cwd")
+                        .and_then(Value::as_str)
+                        .map(String::from)
+                        .or(conv.cwd);
+                    conv.created_at = payload
+                        .get("timestamp")
+                        .and_then(Value::as_str)
+                        .map(String::from);
+                    Body::Meta {
+                        subtype: "session_meta".into(),
+                        data: payload,
+                    }
+                }
+                ("response_item", "message") => message_body(&payload),
+                ("response_item", "reasoning") => Body::Reasoning {
+                    text: reasoning_text(&payload),
+                },
+                ("response_item", "function_call" | "custom_tool_call") => Body::ToolCall {
+                    call_id: payload
+                        .get("call_id")
+                        .and_then(Value::as_str)
+                        .map(String::from),
+                    name: payload
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("tool")
+                        .to_string(),
+                    args: payload
+                        .get("arguments")
+                        .or_else(|| payload.get("input"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                },
+                ("response_item", "function_call_output" | "custom_tool_call_output") => {
+                    Body::ToolResult {
+                        call_id: payload
+                            .get("call_id")
+                            .and_then(Value::as_str)
+                            .map(String::from),
+                        name: None,
+                        content: output_text(&payload),
+                        is_error: false,
+                    }
+                }
+                ("response_item", "local_shell_call" | "web_search_call") => Body::ToolCall {
+                    call_id: payload
+                        .get("call_id")
+                        .and_then(Value::as_str)
+                        .map(String::from),
+                    name: ptype.trim_end_matches("_call").to_string(),
+                    args: payload.get("action").cloned().unwrap_or(payload),
+                },
+                ("response_item", other) => Body::Meta {
+                    subtype: format!("response_item:{other}"),
+                    data: payload,
+                },
+                // event_msg lines project the same records to the UI; keep
+                // them as meta (out of conversation content, still exported).
+                ("event_msg", sub) => Body::Meta {
+                    subtype: format!("event:{sub}"),
+                    data: payload,
+                },
+                ("turn_context", _) | ("world_state", _) | ("token_usage_record", _) => {
+                    Body::Meta {
+                        subtype: ty.to_string(),
+                        data: payload,
+                    }
+                }
+                ("", _) => {
+                    skipped.push(Skipped {
+                        line: idx,
+                        native_type: None,
+                        reason: "untyped line".into(),
+                    });
+                    continue;
+                }
+                (other, _) => Body::Meta {
+                    subtype: format!("codex:{other}"),
+                    data: payload,
+                },
+            };
+
+            let ordinal = conv.records.len() as u64;
+            conv.records.push(Record {
+                id: native_id,
+                parent: None,
+                ts: ts.clone(),
+                ordinal,
+                body,
+            });
+            record_lines.push(idx);
+        }
+        conv.updated_at = conv.records.iter().rev().find_map(|r| r.ts.clone());
+        if conv.created_at.is_none() {
+            conv.created_at = conv.records.iter().find_map(|r| r.ts.clone());
+        }
+        if !saw_rollout && (!skipped.is_empty() || conv.records.is_empty()) {
+            // A `.jsonl` artifact with no rollout-typed lines is a
+            // generic transcript hosted under the codex adapter —
+            // decode it with the shared shape decoder so its session
+            // groups and records still resolve.
+            return acop::generic::decode_jsonl(path, "codex");
+        }
+        Ok(Decoded {
+            conversation: conv,
+            record_lines,
+            line_count,
+            skipped,
+        })
+    }
+
+    /// A `.jsonl` file hosting several declared session groups is a
+    /// container: one [`SessionRef`] per group so hosts can read each
+    /// session. Real rollout files carry a single `session_meta` id and
+    /// stay file-addressed.
+    fn sessions_in_file(&self, path: &Path) -> Result<Vec<SessionRef>> {
+        let ext = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if matches!(ext, "jsonl" | "ndjson") {
+            let refs = acop::generic::jsonl_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        if ext == "json" {
+            let refs = acop::generic::json_document_session_refs(path);
+            if !refs.is_empty() {
+                return Ok(refs);
+            }
+        }
+        Ok(vec![SessionRef {
+            id: self.session_id(path),
+            path: path.to_path_buf(),
+            key: None,
+            parent: None,
+        }])
+    }
+
+    /// `key = Some(..)` decodes one declared session group out of a
+    /// multi-session `.jsonl` or one `sessions[]` item out of a `.json`
+    /// document; `key = None` decodes the file.
+    fn decode_session(&self, session: &SessionRef) -> Result<Decoded> {
+        match session.key.as_deref() {
+            Some(key) => match session
+                .path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default()
+            {
+                "json" => acop::generic::decode_json_document_session(&session.path, key, "codex"),
+                _ => acop::generic::decode_jsonl_session(&session.path, key, "codex"),
+            },
+            None => self.decode(&session.path),
+        }
+    }
+
+    fn encode(&self, conv: &Conversation) -> Result<Encoded> {
+        let (kept, projection) = self.project(conv);
+        let now = acop::util::now_rfc3339();
+        let mut lines = Vec::with_capacity(kept.len() + 1);
+        lines.push(
+            json!({
+                "timestamp": conv.created_at.clone().unwrap_or_else(|| now.clone()),
+                "type": "session_meta",
+                "payload": {
+                    "id": conv.session_id,
+                    "timestamp": conv.created_at.clone().unwrap_or_else(|| now.clone()),
+                    "cwd": conv.cwd,
+                    "originator": "acop",
+                }
+            })
+            .to_string(),
+        );
+        for rec in kept {
+            let ts = rec.ts.clone().unwrap_or_else(|| now.clone());
+            let payload = match &rec.body {
+                Body::User { text, .. } => json!({
+                    "type": "message", "id": rec_id("msg", rec), "role": "user",
+                    "content": [{"type": "input_text", "text": text}],
+                }),
+                Body::Assistant { text, .. } => json!({
+                    "type": "message", "id": rec_id("msg", rec), "role": "assistant",
+                    "content": [{"type": "output_text", "text": text}],
+                }),
+                Body::System { text, .. } => json!({
+                    "type": "message", "id": rec_id("msg", rec), "role": "developer",
+                    "content": [{"type": "input_text", "text": text}],
+                }),
+                Body::Reasoning { text } => json!({
+                    "type": "reasoning", "id": rec_id("rs", rec),
+                    "summary": [{"type": "summary_text", "text": text}],
+                    "content": [{"type": "reasoning_text", "text": text}],
+                    "encrypted_content": Value::Null,
+                }),
+                Body::ToolCall {
+                    call_id,
+                    name,
+                    args,
+                } => json!({
+                    "type": "custom_tool_call", "id": rec_id("ctc", rec),
+                    "call_id": call_id.clone().unwrap_or_else(|| rec_id("call", rec)),
+                    "name": name,
+                    "input": match args { Value::String(s) => s.clone(), v => v.to_string() },
+                }),
+                Body::ToolResult {
+                    call_id, content, ..
+                } => json!({
+                    "type": "custom_tool_call_output", "id": rec_id("ctco", rec),
+                    "call_id": call_id,
+                    "output": [{"type": "input_text", "text": match content {
+                        Value::String(s) => s.clone(), v => v.to_string() }}],
+                }),
+                Body::Meta { .. } => continue, // filtered by projection already
+            };
+            lines.push(
+                json!({"timestamp": ts, "type": "response_item", "payload": payload}).to_string(),
+            );
+        }
+        Ok(Encoded { lines, projection })
+    }
+
+    /// `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<uuid>.jsonl`
+    fn store_path(&self, home: &Path, conv: &Conversation) -> Result<PathBuf> {
+        let today = acop::util::today();
+        let (y, m, d) = (&today[0..4], &today[5..7], &today[8..10]);
+        let stamp = acop::util::now_rfc3339()
+            .replace(':', "-")
+            .trim_end_matches('Z')
+            .to_string();
+        Ok(home
+            .join(".codex/sessions")
+            .join(y)
+            .join(m)
+            .join(d)
+            .join(format!("rollout-{stamp}-{}.jsonl", conv.session_id)))
+    }
+
+    fn redact_line(&self, line: &Value, marker: &str) -> Option<Value> {
+        let mut line = line.clone();
+        let payload = line.get_mut("payload")?;
+        match payload.get("type").and_then(Value::as_str) {
+            Some("message") => {
+                for part in payload.get_mut("content").and_then(Value::as_array_mut)? {
+                    if part.get("text").is_some() {
+                        part["text"] = json!(marker);
+                    }
+                }
+            }
+            Some("reasoning") => {
+                if let Some(summary) = payload.get_mut("summary").and_then(Value::as_array_mut) {
+                    for part in summary {
+                        if part.get("text").is_some() {
+                            part["text"] = json!(marker);
+                        }
+                    }
+                }
+                if let Some(content) = payload.get_mut("content").and_then(Value::as_array_mut) {
+                    for part in content {
+                        if part.get("text").is_some() {
+                            part["text"] = json!(marker);
+                        }
+                    }
+                }
+                if payload.get("encrypted_content").is_some() {
+                    payload["encrypted_content"] = Value::Null;
+                }
+            }
+            Some("function_call") | Some("custom_tool_call") => {
+                if payload.get("arguments").is_some() {
+                    payload["arguments"] = json!(marker);
+                }
+                if payload.get("input").is_some() {
+                    payload["input"] = json!(marker);
+                }
+            }
+            Some("function_call_output") | Some("custom_tool_call_output") => {
+                match payload.get_mut("output")? {
+                    Value::String(_) => payload["output"] = json!(marker),
+                    Value::Array(parts) => {
+                        for part in parts {
+                            if part.get("text").is_some() {
+                                part["text"] = json!(marker);
+                            }
+                        }
+                    }
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        }
+        Some(line)
+    }
+}
+
+fn rec_id(prefix: &str, rec: &Record) -> String {
+    rec.id
+        .clone()
+        .unwrap_or_else(|| format!("{prefix}_{}", uuid::Uuid::new_v4().simple()))
+}
+
+fn message_body(payload: &Value) -> Body {
+    let role = payload.get("role").and_then(Value::as_str).unwrap_or("");
+    let text = payload
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    match role {
+        "user" => Body::User {
+            text,
+            model: None,
+            attachments: Vec::<Attachment>::new(),
+        },
+        "assistant" => Body::Assistant { text, model: None },
+        other => Body::System {
+            subtype: format!("role:{other}"),
+            text,
+        },
+    }
+}
+
+fn reasoning_text(payload: &Value) -> String {
+    let mut text = payload
+        .get("summary")
+        .and_then(Value::as_array)
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    if text.is_empty() {
+        text = payload
+            .get("content")
+            .and_then(Value::as_array)
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|p| p.get("text").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+    }
+    if text.is_empty() && payload.get("encrypted_content").is_some() {
+        text = "<encrypted reasoning>".to_string();
+    }
+    text
+}
+
+fn output_text(payload: &Value) -> Value {
+    match payload.get("output") {
+        Some(Value::Array(parts)) => {
+            let joined = parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Value::String(joined)
+        }
+        Some(v) => v.clone(),
+        None => Value::Null,
+    }
+}

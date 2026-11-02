@@ -1,4 +1,4 @@
-# The canonical conversation model — `aco-conversation/1`
+# The canonical conversation model — `acop-conversation/1`
 
 Every operator speaks one normalized document. A codec decodes a native
 session file into this model; export serializes it directly; transform
@@ -7,7 +7,7 @@ it into a store under a fresh session id.
 
 ```json
 {
-  "format": "aco-conversation/1",
+  "format": "acop-conversation/1",
   "agent": "codex",
   "session_id": "…",
   "title": "…",
@@ -53,7 +53,7 @@ already uses:
 
 Projection never drops silently: `transform`/`import` report every
 adapted and dropped `(ordinal, kind)` pair. The matrix is the scoreboard
-for how faithfully a store can carry a conversation; `aco capabilities`
+for how faithfully a store can carry a conversation; `acop capabilities`
 prints it.
 
 Current matrices:
