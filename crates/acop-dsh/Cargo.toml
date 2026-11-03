@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "aco_dsh"
+name = "acop_dsh"
 
 [dependencies]
 a4aa-dsh = { path = "../../../Adapter-For-All-Agents/crates/a4aa-dsh", version = "0.4.1" }

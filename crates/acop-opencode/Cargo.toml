@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "aco_opencode"
+name = "acop_opencode"
 
 [dependencies]
 a4aa-opencode = { path = "../../../Adapter-For-All-Agents/crates/a4aa-opencode", version = "0.4.1" }

@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "aco_copilot"
+name = "acop_copilot"
 
 [dependencies]
 a4aa-copilot = "=0.4.1"

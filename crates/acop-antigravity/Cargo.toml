@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "aco_antigravity"
+name = "acop_antigravity"
 
 [dependencies]
 a4aa-antigravity = { path = "../../../Adapter-For-All-Agents/crates/a4aa-antigravity", version = "0.4.1" }

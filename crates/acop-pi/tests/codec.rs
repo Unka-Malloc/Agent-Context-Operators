@@ -25,7 +25,7 @@ fn fixture() -> tempfile::TempDir {
 fn decode_projects_blocks_and_usage() {
     let dir = fixture();
     let path = dir.path().join("myproj_42.jsonl");
-    let decoded = aco_pi::codec().decode(&path).unwrap();
+    let decoded = acop_pi::codec().decode(&path).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "42");
     assert_eq!(conv.title.as_deref(), Some("fix login"));
@@ -53,23 +53,23 @@ fn decode_projects_blocks_and_usage() {
 fn session_id_prefers_header_over_filename() {
     let dir = fixture();
     let path = dir.path().join("myproj_42.jsonl");
-    assert_eq!(aco_pi::codec().session_id(&path), "42");
+    assert_eq!(acop_pi::codec().session_id(&path), "42");
     let bare = dir.path().join("proj_noheader.jsonl");
     std::fs::write(
         &bare,
         r#"{"type":"message","message":{"role":"user","content":"x"}}"#,
     )
     .unwrap();
-    assert_eq!(aco_pi::codec().session_id(&bare), "noheader");
+    assert_eq!(acop_pi::codec().session_id(&bare), "noheader");
 }
 
 #[test]
 fn encode_roundtrips_native_shape() {
     let dir = fixture();
-    let decoded = aco_pi::codec()
+    let decoded = acop_pi::codec()
         .decode(&dir.path().join("myproj_42.jsonl"))
         .unwrap();
-    let encoded = aco_pi::codec().encode(&decoded.conversation).unwrap();
+    let encoded = acop_pi::codec().encode(&decoded.conversation).unwrap();
     assert!(encoded.projection.dropped.is_empty());
     let lines: Vec<serde_json::Value> = encoded
         .lines
@@ -93,7 +93,7 @@ fn store_path_honors_env_override() {
     let dir = tempfile::tempdir().unwrap();
     let conv = Conversation::new("abc");
     std::env::set_var("PI_CODING_AGENT_SESSION_DIR", dir.path());
-    let path = aco_pi::codec().store_path(dir.path(), &conv).unwrap();
+    let path = acop_pi::codec().store_path(dir.path(), &conv).unwrap();
     std::env::remove_var("PI_CODING_AGENT_SESSION_DIR");
     assert_eq!(path, dir.path().join("abc.jsonl"));
 }
@@ -104,12 +104,12 @@ fn redact_line_rewrites_text_blocks_only() {
         r#"{"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"secret"},{"type":"text","text":"more"}]}}"#,
     )
     .unwrap();
-    let out = aco_pi::codec().redact_line(&line, "[redacted]").unwrap();
+    let out = acop_pi::codec().redact_line(&line, "[redacted]").unwrap();
     assert_eq!(out["message"]["content"][0]["thinking"], "[redacted]");
     assert_eq!(out["message"]["content"][1]["text"], "[redacted]");
     let session: serde_json::Value =
         serde_json::from_str(r#"{"type":"session","id":"1"}"#).unwrap();
-    assert!(aco_pi::codec()
+    assert!(acop_pi::codec()
         .redact_line(&session, "[redacted]")
         .is_none());
 }

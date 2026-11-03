@@ -206,7 +206,7 @@ fn transcript_fixture(dir: &Path, session: &str, lines: &[&str]) -> PathBuf {
 
 #[test]
 fn history_roots_cover_card_and_platform_storage_variants() {
-    let roots = aco_cursor::codec().history();
+    let roots = acop_cursor::codec().history();
     let kinds: Vec<(&str, &str)> = roots.iter().map(|r| (r.kind, r.path)).collect();
     assert_eq!(
         kinds
@@ -231,7 +231,7 @@ fn history_roots_cover_card_and_platform_storage_variants() {
     assert!(kinds.contains(&("cursor-cli-chats", "{home}/.cursor/chats")));
     assert!(kinds.contains(&("cursor-cli-projects", "{home}/.cursor/projects")));
     // The card declares no persisted usage counters.
-    assert!(aco_cursor::codec().transcript_usage().is_none());
+    assert!(acop_cursor::codec().transcript_usage().is_none());
 }
 
 #[test]
@@ -240,13 +240,13 @@ fn expand_root_resolves_appdata_and_xdg_tokens() {
     std::env::remove_var("APPDATA");
     std::env::remove_var("XDG_CONFIG_HOME");
     let home = Path::new("/fixture-home");
-    let roots = aco_cursor::codec().history();
+    let roots = acop_cursor::codec().history();
     let xdg = roots
         .iter()
         .find(|r| r.path.starts_with("{xdg_config}/"))
         .unwrap();
     assert_eq!(
-        aco_cursor::codec().expand_root(xdg, home),
+        acop_cursor::codec().expand_root(xdg, home),
         PathBuf::from("/fixture-home/.config/Cursor/User/workspaceStorage")
     );
     let appdata = roots
@@ -254,7 +254,7 @@ fn expand_root_resolves_appdata_and_xdg_tokens() {
         .find(|r| r.path.starts_with("{appdata}/"))
         .unwrap();
     assert_eq!(
-        aco_cursor::codec().expand_root(appdata, home),
+        acop_cursor::codec().expand_root(appdata, home),
         PathBuf::from("/fixture-home/AppData/Roaming/Cursor/User/workspaceStorage")
     );
 }
@@ -278,7 +278,7 @@ fn select_session_files_filters_extensions_and_meta() {
     .iter()
     .map(PathBuf::from)
     .collect();
-    let selected = aco_cursor::codec().select_session_files(files);
+    let selected = acop_cursor::codec().select_session_files(files);
     let names: Vec<String> = selected
         .iter()
         .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
@@ -321,7 +321,7 @@ fn enumerate_emits_one_session_ref_per_composer_row() {
             ("composer-draft", r#"{"composerId":"composer-draft"}"#, &[]),
         ],
     );
-    let refs = aco_cursor::codec()
+    let refs = acop_cursor::codec()
         .enumerate(&root("cursor-workspace-storage"), dir.path())
         .unwrap();
     assert_eq!(refs.len(), 1);
@@ -377,7 +377,7 @@ fn decode_session_reads_composer_bubbles() {
         key: Some("composerData:composer-1".to_string()),
         parent: None,
     };
-    let decoded = aco_cursor::codec().decode_session(&session).unwrap();
+    let decoded = acop_cursor::codec().decode_session(&session).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "composer-1");
     assert_eq!(conv.title.as_deref(), Some("Titled chat"));
@@ -441,7 +441,7 @@ fn delegated_composer_carries_lineage_meta() {
         key: Some("composerData:child-composer".to_string()),
         parent: None,
     };
-    let decoded = aco_cursor::codec().decode_session(&session).unwrap();
+    let decoded = acop_cursor::codec().decode_session(&session).unwrap();
     match &decoded.conversation.records[0].body {
         Body::Meta { subtype, data } => {
             assert_eq!(subtype, "subagent-lineage");
@@ -470,7 +470,7 @@ fn decode_multi_session_container_is_a_usage_error() {
             ),
         ],
     );
-    let err = aco_cursor::codec().decode(&db).unwrap_err();
+    let err = acop_cursor::codec().decode(&db).unwrap_err();
     assert!(matches!(err, acop::Error::Usage(_)), "got {err:?}");
 
     // A container with exactly one stored session decodes as that session.
@@ -482,7 +482,7 @@ fn decode_multi_session_container_is_a_usage_error() {
             &[("z", 1, "lone")],
         )],
     );
-    let decoded = aco_cursor::codec().decode(&single).unwrap();
+    let decoded = acop_cursor::codec().decode(&single).unwrap();
     assert_eq!(decoded.conversation.session_id, "only");
 }
 
@@ -498,7 +498,7 @@ fn enumerate_finds_store_db_sessions_and_skips_meta_json() {
         "aaaa-bbbb",
         &[serde_json::json!({"role": "user", "content": "hi"})],
     );
-    let refs = aco_cursor::codec()
+    let refs = acop_cursor::codec()
         .enumerate(&root("cursor-cli-chats"), dir.path())
         .unwrap();
     assert_eq!(
@@ -537,7 +537,7 @@ fn decode_cli_store_maps_blob_roles_and_meta() {
             serde_json::json!({"sessionId": "session-uuid", "configOptions": {"mode": "agent"}}),
         ],
     );
-    let decoded = aco_cursor::codec().decode(&db).unwrap();
+    let decoded = acop_cursor::codec().decode(&db).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "session-uuid");
     assert_eq!(conv.title.as_deref(), Some("Fixture chat"));
@@ -588,7 +588,7 @@ fn decode_cli_store_maps_blob_roles_and_meta() {
 fn openagent_store_enumerates_rows_and_decodes_them() {
     let dir = tempfile::tempdir().unwrap();
     let db = openagent_fixture(dir.path());
-    let refs = aco_cursor::codec()
+    let refs = acop_cursor::codec()
         .enumerate(&root("cursor-agents"), &db)
         .unwrap();
     // s3 has no messages — not an enumerated session.
@@ -598,7 +598,7 @@ fn openagent_store_enumerates_rows_and_decodes_them() {
     let s1 = refs.iter().find(|r| r.id == "s1").unwrap();
     assert_eq!(s1.key.as_deref(), Some("s1"));
 
-    let decoded = aco_cursor::codec().decode_session(s1).unwrap();
+    let decoded = acop_cursor::codec().decode_session(s1).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "s1");
     assert_eq!(conv.title.as_deref(), Some("root session"));
@@ -645,7 +645,7 @@ fn openagent_child_session_carries_lineage() {
         key: Some("s2".to_string()),
         parent: None,
     };
-    let decoded = aco_cursor::codec().decode_session(&session).unwrap();
+    let decoded = acop_cursor::codec().decode_session(&session).unwrap();
     match &decoded.conversation.records[0].body {
         Body::Meta { subtype, data } => {
             assert_eq!(subtype, "subagent-lineage");
@@ -672,7 +672,7 @@ fn decode_transcript_projects_roles_blocks_and_lifecycle() {
             r#"{"type":"turn_ended","status":"error","error":"usage limit"}"#,
         ],
     );
-    let decoded = aco_cursor::codec().decode(&path).unwrap();
+    let decoded = acop_cursor::codec().decode(&path).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "11111111-2222-3333-4444-555555555555");
     assert_eq!(conv.cwd.as_deref(), Some("/work/trusted-proj"));
@@ -712,7 +712,7 @@ fn delegated_transcript_uses_task_identity_and_parent() {
         r#"{"role":"user","message":{"content":[{"type":"text","text":"task prompt"}]}}"#,
     )
     .unwrap();
-    let decoded = aco_cursor::codec().decode(&task).unwrap();
+    let decoded = acop_cursor::codec().decode(&task).unwrap();
     assert_eq!(decoded.conversation.session_id, "task-uuid");
     match &decoded.conversation.records[0].body {
         Body::Meta { subtype, data } => {
@@ -721,7 +721,7 @@ fn delegated_transcript_uses_task_identity_and_parent() {
         }
         other => panic!("expected lineage meta, got {other:?}"),
     }
-    let refs = aco_cursor::codec()
+    let refs = acop_cursor::codec()
         .enumerate(&root("cursor-cli-projects"), &dir.path().join("projects"))
         .unwrap();
     let ids: Vec<&str> = refs.iter().map(|r| r.id.as_str()).collect();
@@ -740,7 +740,7 @@ fn decode_json_document_collects_message_arrays() {
         ]}"#,
     )
     .unwrap();
-    let decoded = aco_cursor::codec().decode(&path).unwrap();
+    let decoded = acop_cursor::codec().decode(&path).unwrap();
     assert_eq!(decoded.conversation.session_id, "doc-1");
     let kinds: Vec<RecordKind> = decoded
         .conversation
@@ -802,7 +802,7 @@ fn encode_emits_transcript_lines_with_honest_projection() {
             body,
         });
     }
-    let encoded = aco_cursor::codec().encode(&conv).unwrap();
+    let encoded = acop_cursor::codec().encode(&conv).unwrap();
     // system + meta cannot ride in a transcript.
     assert_eq!(
         encoded.projection.dropped,
@@ -830,7 +830,7 @@ fn redact_line_rewrites_transcript_text_and_payloads() {
         r#"{"role":"assistant","message":{"content":[{"type":"text","text":"secret"},{"type":"tool_use","name":"x","input":{"a":1}}]}}"#,
     )
     .unwrap();
-    let out = aco_cursor::codec()
+    let out = acop_cursor::codec()
         .redact_line(&line, "[redacted]")
         .unwrap();
     assert_eq!(out["message"]["content"][0]["text"], "[redacted]");
@@ -838,7 +838,7 @@ fn redact_line_rewrites_transcript_text_and_payloads() {
 
     let lifecycle: serde_json::Value =
         serde_json::from_str(r#"{"type":"turn_ended","status":"error","error":"oops"}"#).unwrap();
-    let out = aco_cursor::codec()
+    let out = acop_cursor::codec()
         .redact_line(&lifecycle, "[redacted]")
         .unwrap();
     assert_eq!(out["error"], "[redacted]");
@@ -846,7 +846,7 @@ fn redact_line_rewrites_transcript_text_and_payloads() {
     // Container rows are not file lines — redaction cannot touch them.
     let row: serde_json::Value =
         serde_json::from_str(r#"{"key":"composerData:x","value":"{}"}"#).unwrap();
-    assert!(aco_cursor::codec()
+    assert!(acop_cursor::codec()
         .redact_line(&row, "[redacted]")
         .is_none());
 }
@@ -855,7 +855,7 @@ fn redact_line_rewrites_transcript_text_and_payloads() {
 fn store_path_lands_in_agents_transcript_layout() {
     let dir = tempfile::tempdir().unwrap();
     let conv = Conversation::new("new-session-id");
-    let path = aco_cursor::codec().store_path(dir.path(), &conv).unwrap();
+    let path = acop_cursor::codec().store_path(dir.path(), &conv).unwrap();
     assert_eq!(
         path,
         dir.path()
@@ -872,6 +872,6 @@ fn decode_rejects_unrecognized_sqlite() {
         .execute_batch("CREATE TABLE something (a TEXT)")
         .unwrap();
     drop(connection);
-    let err = aco_cursor::codec().decode(&db).unwrap_err();
+    let err = acop_cursor::codec().decode(&db).unwrap_err();
     assert!(matches!(err, acop::Error::Usage(_)), "got {err:?}");
 }

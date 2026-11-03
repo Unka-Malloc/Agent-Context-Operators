@@ -29,7 +29,7 @@ fn jsonl_fixture(dir: &tempfile::TempDir) -> PathBuf {
 #[test]
 fn decode_jsonl_through_the_generic_lane() {
     let dir = tempfile::tempdir().unwrap();
-    let decoded = aco_opencode::codec().decode(&jsonl_fixture(&dir)).unwrap();
+    let decoded = acop_opencode::codec().decode(&jsonl_fixture(&dir)).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, OC_ID);
     assert_eq!(conv.agent.as_deref(), Some("opencode"));
@@ -64,7 +64,7 @@ fn decode_json_document_and_text() {
         .to_string(),
     )
     .unwrap();
-    let decoded = aco_opencode::codec().decode(&json).unwrap();
+    let decoded = acop_opencode::codec().decode(&json).unwrap();
     assert_eq!(decoded.conversation.session_id, "oc-doc");
     let kinds: Vec<RecordKind> = decoded
         .conversation
@@ -76,7 +76,7 @@ fn decode_json_document_and_text() {
 
     let txt = dir.path().join("notes.txt");
     std::fs::write(&txt, "user: first\n\nassistant: second\n").unwrap();
-    let decoded = aco_opencode::codec().decode(&txt).unwrap();
+    let decoded = acop_opencode::codec().decode(&txt).unwrap();
     let kinds: Vec<RecordKind> = decoded
         .conversation
         .records
@@ -88,7 +88,7 @@ fn decode_json_document_and_text() {
 
 #[test]
 fn select_session_files_accepts_the_licoup_extension_set() {
-    let codec = aco_opencode::codec();
+    let codec = acop_opencode::codec();
     let files = vec![
         PathBuf::from("a.jsonl"),
         PathBuf::from("b.ndjson"),
@@ -127,7 +127,7 @@ fn select_session_files_accepts_the_licoup_extension_set() {
 
 #[test]
 fn xdg_data_root_resolves_through_the_environment() {
-    let codec = aco_opencode::codec();
+    let codec = acop_opencode::codec();
     let dir = tempfile::tempdir().unwrap();
     let root = codec
         .history()
@@ -143,7 +143,7 @@ fn xdg_data_root_resolves_through_the_environment() {
 #[test]
 fn encode_store_path_and_redact_pass_through() {
     let dir = tempfile::tempdir().unwrap();
-    let codec = aco_opencode::codec();
+    let codec = acop_opencode::codec();
 
     let decoded = codec.decode(&jsonl_fixture(&dir)).unwrap();
     let encoded = codec.encode(&decoded.conversation).unwrap();
@@ -163,7 +163,7 @@ fn encode_store_path_and_redact_pass_through() {
 
 #[test]
 fn history_comes_from_the_card() {
-    let codec = aco_opencode::codec();
+    let codec = acop_opencode::codec();
     let history = codec.history();
     assert!(history.iter().any(|root| {
         root.kind == "opencode-data-store" && root.path == "{home}/.local/share/opencode"
@@ -188,7 +188,7 @@ fn sqlite_file_enumerates_session_keys() {
              INSERT INTO history VALUES ('conv-1', '{\"role\":\"assistant\",\"text\":\"hello\"}');",
         )
         .unwrap();
-    let sessions = aco_opencode::codec().sessions_in_file(&db).unwrap();
+    let sessions = acop_opencode::codec().sessions_in_file(&db).unwrap();
     assert!(!sessions.is_empty());
     assert!(sessions.iter().all(|s| s.key.is_some() && s.path == db));
 }
@@ -207,7 +207,7 @@ fn archive_session_flips_time_archived_on_session_rows() {
         conn.execute("INSERT INTO session_v2 (id) VALUES ('ses_abc')", [])
             .unwrap();
     }
-    let codec = aco_opencode::codec();
+    let codec = acop_opencode::codec();
     let session = acop::codec::SessionRef {
         id: "ses_abc".into(),
         path: db.clone(),

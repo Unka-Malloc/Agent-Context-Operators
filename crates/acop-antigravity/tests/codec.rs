@@ -29,7 +29,7 @@ fn jsonl_fixture(dir: &tempfile::TempDir) -> PathBuf {
 #[test]
 fn decode_jsonl_through_the_generic_lane() {
     let dir = tempfile::tempdir().unwrap();
-    let decoded = aco_antigravity::codec()
+    let decoded = acop_antigravity::codec()
         .decode(&jsonl_fixture(&dir))
         .unwrap();
     let conv = &decoded.conversation;
@@ -68,7 +68,7 @@ fn decode_json_document_and_markdown() {
         .to_string(),
     )
     .unwrap();
-    let decoded = aco_antigravity::codec().decode(&json).unwrap();
+    let decoded = acop_antigravity::codec().decode(&json).unwrap();
     assert_eq!(decoded.conversation.session_id, "ag-doc");
     assert_eq!(
         decoded.conversation.title.as_deref(),
@@ -84,7 +84,7 @@ fn decode_json_document_and_markdown() {
 
     let md = dir.path().join("notes.md");
     std::fs::write(&md, "# Title\n\nuser: first\n\nassistant: second\n").unwrap();
-    let decoded = aco_antigravity::codec().decode(&md).unwrap();
+    let decoded = acop_antigravity::codec().decode(&md).unwrap();
     assert_eq!(decoded.conversation.title.as_deref(), Some("Title"));
     let kinds: Vec<RecordKind> = decoded
         .conversation
@@ -97,7 +97,7 @@ fn decode_json_document_and_markdown() {
 
 #[test]
 fn session_id_uses_uuid_layout_then_stem() {
-    let codec = aco_antigravity::codec();
+    let codec = acop_antigravity::codec();
     let dir = tempfile::tempdir().unwrap();
     let nested = dir
         .path()
@@ -115,7 +115,7 @@ fn session_id_uses_uuid_layout_then_stem() {
 
 #[test]
 fn select_session_files_accepts_the_licoup_extension_set() {
-    let codec = aco_antigravity::codec();
+    let codec = acop_antigravity::codec();
     let files = vec![
         PathBuf::from("a.jsonl"),
         PathBuf::from("b.ndjson"),
@@ -156,7 +156,7 @@ fn select_session_files_accepts_the_licoup_extension_set() {
 #[test]
 fn encode_store_path_and_redact_pass_through() {
     let dir = tempfile::tempdir().unwrap();
-    let codec = aco_antigravity::codec();
+    let codec = acop_antigravity::codec();
 
     let decoded = codec.decode(&jsonl_fixture(&dir)).unwrap();
     let encoded = codec.encode(&decoded.conversation).unwrap();
@@ -183,7 +183,7 @@ fn encode_store_path_and_redact_pass_through() {
 
 #[test]
 fn history_comes_from_the_card() {
-    let codec = aco_antigravity::codec();
+    let codec = acop_antigravity::codec();
     let history = codec.history();
     assert_eq!(
         history
@@ -213,7 +213,7 @@ fn sqlite_file_enumerates_session_keys() {
              INSERT INTO history VALUES ('conv-1', '{\"role\":\"assistant\",\"text\":\"hello\"}');",
         )
         .unwrap();
-    let sessions = aco_antigravity::codec().sessions_in_file(&db).unwrap();
+    let sessions = acop_antigravity::codec().sessions_in_file(&db).unwrap();
     assert!(!sessions.is_empty());
     assert!(sessions.iter().all(|s| s.key.is_some() && s.path == db));
 }

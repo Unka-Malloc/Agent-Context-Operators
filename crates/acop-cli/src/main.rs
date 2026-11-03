@@ -13,18 +13,18 @@ use acop::{ops, snapshot, Codec, Error, Selectors};
 
 fn registry() -> Vec<&'static dyn Codec> {
     vec![
-        aco_antigravity::codec(),
-        aco_claude::codec(),
-        aco_codex::codec(),
-        aco_copilot::codec(),
-        aco_cursor::codec(),
-        aco_dsh::codec(),
-        aco_hermes::codec(),
-        aco_kilo_code::codec(),
-        aco_kimi_code::codec(),
-        aco_openclaw::codec(),
-        aco_opencode::codec(),
-        aco_pi::codec(),
+        acop_antigravity::codec(),
+        acop_claude::codec(),
+        acop_codex::codec(),
+        acop_copilot::codec(),
+        acop_cursor::codec(),
+        acop_dsh::codec(),
+        acop_hermes::codec(),
+        acop_kilo_code::codec(),
+        acop_kimi_code::codec(),
+        acop_openclaw::codec(),
+        acop_opencode::codec(),
+        acop_pi::codec(),
     ]
 }
 

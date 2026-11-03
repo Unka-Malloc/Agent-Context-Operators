@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "aco_pi"
+name = "acop_pi"
 
 [dependencies]
 a4aa-pi = { path = "../../../Adapter-For-All-Agents/crates/a4aa-pi", version = "0.4.1" }

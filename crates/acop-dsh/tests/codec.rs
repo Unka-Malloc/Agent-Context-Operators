@@ -55,7 +55,7 @@ fn decode_fold_covers_blocks_dedupe_and_ancestry() {
     let dir = tmp.path().join("proj/sess-1");
     let path = write_session(&dir, "session.jsonl", &fixture_lines());
 
-    let decoded = aco_dsh::codec().decode(&path).unwrap();
+    let decoded = acop_dsh::codec().decode(&path).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "sess-1");
     assert_eq!(conv.title.as_deref(), Some("Fixture session"));
@@ -110,7 +110,7 @@ fn decode_fold_covers_blocks_dedupe_and_ancestry() {
 
 #[test]
 fn generation_selection_keeps_only_newest_per_directory() {
-    let codec = aco_dsh::codec();
+    let codec = acop_dsh::codec();
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("proj/sess-1");
     let other = tmp.path().join("proj/sess-2");
@@ -150,7 +150,7 @@ fn zstd_container_decodes_like_plain() {
 
     // Two concatenated copies of the same log: rows after the first log's
     // end are just more rows — decode must not fail on the second frame.
-    let decoded = aco_dsh::codec().decode(&path);
+    let decoded = acop_dsh::codec().decode(&path);
     assert!(decoded.is_ok(), "{:?}", decoded.err());
 }
 
@@ -163,7 +163,7 @@ fn other_format_versions_refused_by_name() {
         "session.jsonl",
         &[json!({ "type": "session", "version": 3, "id": "sess-9" }).to_string()],
     );
-    let err = aco_dsh::codec().decode(&path).unwrap_err();
+    let err = acop_dsh::codec().decode(&path).unwrap_err();
     assert!(err.to_string().contains("format version 3"), "{err}");
 }
 
@@ -172,7 +172,7 @@ fn encode_roundtrip_and_store_path() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("proj/sess-1");
     let path = write_session(&dir, "session.jsonl", &fixture_lines());
-    let codec = aco_dsh::codec();
+    let codec = acop_dsh::codec();
     let conv = codec.decode(&path).unwrap().conversation;
 
     let encoded = codec.encode(&conv).unwrap();
@@ -202,7 +202,7 @@ fn fork_session_writes_native_inherited_header() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("proj/sess-1");
     let path = write_session(&dir, "session.jsonl", &fixture_lines());
-    let codec = aco_dsh::codec();
+    let codec = acop_dsh::codec();
     let src = acop::codec::SessionRef {
         id: "sess-1".into(),
         path: path.clone(),
@@ -239,7 +239,7 @@ fn fork_session_truncates_and_dry_run_writes_nothing() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("proj/sess-1");
     let path = write_session(&dir, "session.jsonl", &fixture_lines());
-    let codec = aco_dsh::codec();
+    let codec = acop_dsh::codec();
     let src = acop::codec::SessionRef {
         id: "sess-1".into(),
         path,

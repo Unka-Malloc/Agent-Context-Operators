@@ -182,7 +182,9 @@ fn enumerate_openagent_db_emits_session_refs() {
         kind: "kilo-session-store",
         store: acop::StoreKind::SqliteDb,
     };
-    let sessions = aco_kilo_code::codec().enumerate(&root, dir.path()).unwrap();
+    let sessions = acop_kilo_code::codec()
+        .enumerate(&root, dir.path())
+        .unwrap();
     let mut ids: Vec<String> = sessions.iter().map(|s| s.id.clone()).collect();
     ids.sort();
     assert_eq!(ids, ["ses_main", "ses_sub"]);
@@ -202,7 +204,7 @@ fn decode_session_projects_openagent_rows() {
         key: Some("ses_main".to_string()),
         parent: None,
     };
-    let decoded = aco_kilo_code::codec().decode_session(&session).unwrap();
+    let decoded = acop_kilo_code::codec().decode_session(&session).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "ses_main");
     assert_eq!(conv.title.as_deref(), Some("fix login"));
@@ -303,7 +305,7 @@ fn decode_session_folds_bare_tool_result_blob() {
         key: Some("ses_sub".to_string()),
         parent: None,
     };
-    let decoded = aco_kilo_code::codec().decode_session(&session).unwrap();
+    let decoded = acop_kilo_code::codec().decode_session(&session).unwrap();
     let kinds: Vec<RecordKind> = decoded
         .conversation
         .records
@@ -334,10 +336,14 @@ fn enumerate_generic_db_uses_probe_groups() {
         kind: "kilo-session-store",
         store: acop::StoreKind::SqliteDb,
     };
-    let sessions = aco_kilo_code::codec().enumerate(&root, dir.path()).unwrap();
+    let sessions = acop_kilo_code::codec()
+        .enumerate(&root, dir.path())
+        .unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].key.as_deref(), Some("history/conv-1"));
-    let decoded = aco_kilo_code::codec().decode_session(&sessions[0]).unwrap();
+    let decoded = acop_kilo_code::codec()
+        .decode_session(&sessions[0])
+        .unwrap();
     let kinds: Vec<RecordKind> = decoded
         .conversation
         .records
@@ -371,7 +377,9 @@ fn probe_rejects_account_fts_embedding_and_sqlite_tables() {
     };
     // `workspace` names no history column per the probe rules, so no
     // session refs survive; a db with zero session rows is empty.
-    let sessions = aco_kilo_code::codec().enumerate(&root, dir.path()).unwrap();
+    let sessions = acop_kilo_code::codec()
+        .enumerate(&root, dir.path())
+        .unwrap();
     assert!(sessions.is_empty());
 }
 
@@ -394,7 +402,7 @@ fn decode_jsonl_groups_by_native_session() {
     .unwrap();
     // Two declared session groups make the file a container: the codec
     // enumerates one ref per group and each decodes its own records.
-    let codec = aco_kilo_code::codec();
+    let codec = acop_kilo_code::codec();
     let refs = codec.sessions_in_file(&path).unwrap();
     let ids: Vec<&str> = refs.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, ["s1", "s2"]);
@@ -418,7 +426,7 @@ fn decode_jsonl_groups_by_native_session() {
 
 #[test]
 fn codec_is_read_only() {
-    let codec = aco_kilo_code::codec();
+    let codec = acop_kilo_code::codec();
     assert!(!codec.capabilities().writable);
     for kind in RecordKind::ALL {
         assert_eq!(codec.capabilities().of(kind), Capability::Unsupported);
@@ -433,7 +441,7 @@ fn codec_is_read_only() {
 
 #[test]
 fn history_comes_from_the_card() {
-    let codec = aco_kilo_code::codec();
+    let codec = acop_kilo_code::codec();
     let history = codec.history();
     assert_eq!(
         history
@@ -451,7 +459,7 @@ fn history_comes_from_the_card() {
 
 #[test]
 fn select_session_files_accepts_the_licoup_extension_set() {
-    let codec = aco_kilo_code::codec();
+    let codec = acop_kilo_code::codec();
     let files = vec![
         std::path::PathBuf::from("a.jsonl"),
         std::path::PathBuf::from("b.ndjson"),

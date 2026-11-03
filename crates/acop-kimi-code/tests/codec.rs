@@ -48,7 +48,7 @@ fn decode_projects_every_wire_kind() {
     );
     fs::write(&path, fixture_lines().join("\n") + "\n").unwrap();
 
-    let decoded = aco_kimi_code::codec().decode(&path).unwrap();
+    let decoded = acop_kimi_code::codec().decode(&path).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "session-1");
     assert_eq!(conv.agent.as_deref(), Some("kimicode"));
@@ -106,7 +106,7 @@ fn decode_projects_every_wire_kind() {
 
 #[test]
 fn session_id_encodes_agent_ancestry() {
-    let codec = aco_kimi_code::codec();
+    let codec = acop_kimi_code::codec();
     let main = Path::new("/x/.kimi-code/wd/session-9/agents/main/wire.jsonl");
     let delegated = Path::new("/x/.kimi-code/wd/session-9/agents/agent-0/wire.jsonl");
     assert_eq!(codec.session_id(main), "session-9");
@@ -115,7 +115,7 @@ fn session_id_encodes_agent_ancestry() {
 
 #[test]
 fn select_session_files_accepts_only_agents_wire() {
-    let codec = aco_kimi_code::codec();
+    let codec = acop_kimi_code::codec();
     let files: Vec<PathBuf> = [
         "wd/s1/agents/main/wire.jsonl",
         "wd/s1/agents/agent-0/wire.jsonl",
@@ -137,7 +137,7 @@ fn select_session_files_accepts_only_agents_wire() {
 #[test]
 fn context_append_message_is_fallback_only() {
     let tmp = tempfile::tempdir().unwrap();
-    let codec = aco_kimi_code::codec();
+    let codec = acop_kimi_code::codec();
 
     // No turn.prompt: the buffered append_message becomes the user turn.
     let orphan = wire_fixture(tmp.path(), "session-fallback", "main", None);
@@ -188,7 +188,7 @@ fn context_append_message_is_fallback_only() {
 #[test]
 fn encode_roundtrips_wire_shape() {
     let tmp = tempfile::tempdir().unwrap();
-    let codec = aco_kimi_code::codec();
+    let codec = acop_kimi_code::codec();
     let path = wire_fixture(tmp.path(), "session-1", "main", None);
     fs::write(&path, fixture_lines().join("\n") + "\n").unwrap();
     let conv = codec.decode(&path).unwrap().conversation;
@@ -236,7 +236,7 @@ fn encode_roundtrips_wire_shape() {
 
 #[test]
 fn expand_root_and_store_path_honor_kimi_code_home() {
-    let codec = aco_kimi_code::codec();
+    let codec = acop_kimi_code::codec();
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     let kimi_home = tmp.path().join("kimi-elsewhere");
@@ -259,7 +259,7 @@ fn expand_root_and_store_path_honor_kimi_code_home() {
 
 #[test]
 fn redact_line_rewrites_content_only() {
-    let codec = aco_kimi_code::codec();
+    let codec = acop_kimi_code::codec();
 
     let prompt: Value =
         serde_json::from_str(r#"{"type":"turn.prompt","input":"secret prompt","turnId":"t1"}"#)

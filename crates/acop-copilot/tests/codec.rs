@@ -46,7 +46,7 @@ fn sqlite_root() -> HistoryRoot {
 fn decode_projects_transcript_rows() {
     let dir = transcript_dir();
     let path = dir.path().join("session-state/copilot-1/events.jsonl");
-    let decoded = aco_copilot::codec().decode(&path).unwrap();
+    let decoded = acop_copilot::codec().decode(&path).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "copilot-1");
     assert_eq!(conv.cwd.as_deref(), Some("/work/p"));
@@ -107,17 +107,17 @@ fn decode_projects_transcript_rows() {
 fn session_id_prefers_header_then_directory_name() {
     let dir = transcript_dir();
     let events = dir.path().join("session-state/copilot-1/events.jsonl");
-    assert_eq!(aco_copilot::codec().session_id(&events), "copilot-1");
+    assert_eq!(acop_copilot::codec().session_id(&events), "copilot-1");
     // No header: the session-state directory name is the id.
     let bare_dir = dir.path().join("session-state/idx-9");
     std::fs::create_dir_all(&bare_dir).unwrap();
     let bare = bare_dir.join("events.jsonl");
     std::fs::write(&bare, r#"{"type":"user.message","data":{"content":"x"}}"#).unwrap();
-    assert_eq!(aco_copilot::codec().session_id(&bare), "idx-9");
+    assert_eq!(acop_copilot::codec().session_id(&bare), "idx-9");
     // A loose transcript file falls back to its stem.
     let loose = dir.path().join("abc-session.jsonl");
     std::fs::write(&loose, r#"{"type":"user.message","data":{"content":"x"}}"#).unwrap();
-    assert_eq!(aco_copilot::codec().session_id(&loose), "abc-session");
+    assert_eq!(acop_copilot::codec().session_id(&loose), "abc-session");
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn select_session_files_accepts_the_licoup_extension_set() {
     .into_iter()
     .map(std::path::PathBuf::from)
     .collect();
-    let selected = aco_copilot::codec().select_session_files(files);
+    let selected = acop_copilot::codec().select_session_files(files);
     assert_eq!(
         selected,
         [
@@ -156,10 +156,10 @@ fn select_session_files_accepts_the_licoup_extension_set() {
 #[test]
 fn encode_roundtrips_native_rows() {
     let dir = transcript_dir();
-    let decoded = aco_copilot::codec()
+    let decoded = acop_copilot::codec()
         .decode(&dir.path().join("session-state/copilot-1/events.jsonl"))
         .unwrap();
-    let encoded = aco_copilot::codec().encode(&decoded.conversation).unwrap();
+    let encoded = acop_copilot::codec().encode(&decoded.conversation).unwrap();
     assert!(encoded.projection.dropped.is_empty());
     // reasoning, usage meta and the preserved shutdown row are adapted.
     assert_eq!(encoded.projection.adapted.len(), 3);
@@ -196,7 +196,7 @@ fn store_path_lands_in_session_state_layout() {
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("COPILOT_HOME", dir.path());
     let conv = Conversation::new("imported-1");
-    let path = aco_copilot::codec().store_path(dir.path(), &conv).unwrap();
+    let path = acop_copilot::codec().store_path(dir.path(), &conv).unwrap();
     std::env::remove_var("COPILOT_HOME");
     assert_eq!(
         path,
@@ -239,7 +239,7 @@ fn enumerate_directory_root_finds_transcripts_and_store_rows() {
             )
             .unwrap();
     }
-    let sessions = aco_copilot::codec()
+    let sessions = acop_copilot::codec()
         .enumerate(&directory_root(), dir.path())
         .unwrap();
     assert_eq!(sessions.len(), 3);
@@ -279,13 +279,15 @@ fn decode_session_reads_chat_sessions_row() {
             )
             .unwrap();
     }
-    let sessions = aco_copilot::codec().enumerate(&sqlite_root(), &db).unwrap();
+    let sessions = acop_copilot::codec()
+        .enumerate(&sqlite_root(), &db)
+        .unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(
         sessions[0].key.as_deref(),
         Some("github.copilot-chat.chatSessions#0")
     );
-    let decoded = aco_copilot::codec().decode_session(&sessions[0]).unwrap();
+    let decoded = acop_copilot::codec().decode_session(&sessions[0]).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "copilot-chat-1");
     assert_eq!(conv.title.as_deref(), Some("Chat One"));
@@ -336,18 +338,20 @@ fn index_rows_point_at_session_state_event_logs() {
     }
     // Under a directory root the index adds nothing the event logs do not
     // already enumerate — it is an index, not content.
-    let sessions = aco_copilot::codec()
+    let sessions = acop_copilot::codec()
         .enumerate(&directory_root(), dir.path())
         .unwrap();
     assert_eq!(sessions.len(), 1);
     assert!(sessions[0].key.is_none());
     // Addressed directly, the store enumerates one resumable row and its
     // key resolves to the session's event log.
-    let sessions = aco_copilot::codec().enumerate(&sqlite_root(), &db).unwrap();
+    let sessions = acop_copilot::codec()
+        .enumerate(&sqlite_root(), &db)
+        .unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].id, "copilot-1");
     assert_eq!(sessions[0].key.as_deref(), Some("sessions:copilot-1"));
-    let decoded = aco_copilot::codec().decode_session(&sessions[0]).unwrap();
+    let decoded = acop_copilot::codec().decode_session(&sessions[0]).unwrap();
     assert_eq!(decoded.conversation.session_id, "copilot-1");
     assert_eq!(decoded.conversation.records.len(), 7);
 }
@@ -362,7 +366,9 @@ fn unrecognized_sqlite_layout_reports_unreadable() {
             .execute("CREATE TABLE unrelated (id TEXT)", [])
             .unwrap();
     }
-    assert!(aco_copilot::codec().enumerate(&sqlite_root(), &db).is_err());
+    assert!(acop_copilot::codec()
+        .enumerate(&sqlite_root(), &db)
+        .is_err());
 }
 
 #[test]
@@ -371,7 +377,7 @@ fn redact_line_rewrites_textual_payload() {
         r#"{"type":"assistant.message","data":{"messageId":"a1","content":"secret answer","reasoningText":"hidden thinking","toolRequests":[{"toolCallId":"c1","name":"bash","arguments":{"command":"rm -rf"}}]}}"#,
     )
     .unwrap();
-    let out = aco_copilot::codec()
+    let out = acop_copilot::codec()
         .redact_line(&line, "[redacted]")
         .unwrap();
     assert_eq!(out["data"]["content"], "[redacted]");
@@ -383,7 +389,7 @@ fn redact_line_rewrites_textual_payload() {
         r#"{"type":"tool.execution_complete","data":{"toolCallId":"c1","result":"private output","success":true}}"#,
     )
     .unwrap();
-    let out = aco_copilot::codec()
+    let out = acop_copilot::codec()
         .redact_line(&tool, "[redacted]")
         .unwrap();
     assert_eq!(out["data"]["result"], "[redacted]");
@@ -393,7 +399,7 @@ fn redact_line_rewrites_textual_payload() {
     let start: serde_json::Value =
         serde_json::from_str(r#"{"type":"session.start","data":{"sessionId":"s1","cwd":"/w"}}"#)
             .unwrap();
-    assert!(aco_copilot::codec()
+    assert!(acop_copilot::codec()
         .redact_line(&start, "[redacted]")
         .is_none());
 
@@ -403,7 +409,7 @@ fn redact_line_rewrites_textual_payload() {
         r#"{"type":"user.message","data":{"content":"","transformedContent":[{"type":"text","text":"secret prompt"}]}}"#,
     )
     .unwrap();
-    let out = aco_copilot::codec()
+    let out = acop_copilot::codec()
         .redact_line(&transformed, "[redacted]")
         .unwrap();
     assert_eq!(out["data"]["transformedContent"], "[redacted]");

@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "aco_codex"
+name = "acop_codex"
 
 [dependencies]
 a4aa-codex = { path = "../../../Adapter-For-All-Agents/crates/a4aa-codex", version = "0.4.1" }

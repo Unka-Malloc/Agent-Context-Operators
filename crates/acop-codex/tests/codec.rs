@@ -35,7 +35,7 @@ fn write_fixture(dir: &std::path::Path) -> std::path::PathBuf {
 fn decode_maps_all_record_kinds() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_fixture(dir.path());
-    let d = aco_codex::codec().decode(&path).unwrap();
+    let d = acop_codex::codec().decode(&path).unwrap();
     let kinds: Vec<RecordKind> = d.conversation.records.iter().map(|r| r.kind()).collect();
     assert_eq!(
         kinds,
@@ -71,7 +71,7 @@ fn decode_maps_all_record_kinds() {
 fn encode_decode_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_fixture(dir.path());
-    let codec = aco_codex::codec();
+    let codec = acop_codex::codec();
     let conv = codec.decode(&path).unwrap().conversation;
     let enc = codec.encode(&conv).unwrap();
     // session_meta + 6 projectable records (3 meta kinds dropped)
@@ -97,7 +97,7 @@ fn encode_decode_roundtrip() {
 
 #[test]
 fn redact_scrubs_text() {
-    let codec = aco_codex::codec();
+    let codec = acop_codex::codec();
     let line: serde_json::Value = serde_json::from_str(
         r#"{"timestamp":"t","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"secret"}]}}"#,
     )
@@ -122,7 +122,7 @@ fn store_path_layout() {
     let home = tempfile::tempdir().unwrap();
     let mut conv = acop::Conversation::new("abcdefab-0000-0000-0000-000000000000");
     conv.cwd = Some("/tmp/proj".into());
-    let p = aco_codex::codec().store_path(home.path(), &conv).unwrap();
+    let p = acop_codex::codec().store_path(home.path(), &conv).unwrap();
     let s = p.to_string_lossy();
     assert!(s.contains("/.codex/sessions/"), "{s}");
     assert!(p
@@ -145,7 +145,7 @@ fn archive_session_moves_rollout_into_archived_sessions() {
     let rollout =
         dir.join("rollout-2026-01-01T00-00-00-abcdefab-1234-5678-9abc-def012345678.jsonl");
     std::fs::write(&rollout, "{\"type\":\"session_meta\",\"payload\":{\"id\":\"abcdefab-1234-5678-9abc-def012345678\"}}\n").unwrap();
-    let codec = aco_codex::codec();
+    let codec = acop_codex::codec();
     let session = acop::codec::SessionRef {
         id: "abcdefab-1234-5678-9abc-def012345678".into(),
         path: rollout.clone(),

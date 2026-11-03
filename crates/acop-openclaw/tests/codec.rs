@@ -22,7 +22,7 @@ fn jsonl_fixture(dir: &tempfile::TempDir) -> PathBuf {
 #[test]
 fn decode_ndjson_through_the_generic_lane() {
     let dir = tempfile::tempdir().unwrap();
-    let decoded = aco_openclaw::codec().decode(&jsonl_fixture(&dir)).unwrap();
+    let decoded = acop_openclaw::codec().decode(&jsonl_fixture(&dir)).unwrap();
     let conv = &decoded.conversation;
     assert_eq!(conv.session_id, "claw-42");
     assert_eq!(conv.agent.as_deref(), Some("openclaw"));
@@ -54,7 +54,7 @@ fn decode_json_document_and_log() {
         .to_string(),
     )
     .unwrap();
-    let decoded = aco_openclaw::codec().decode(&json).unwrap();
+    let decoded = acop_openclaw::codec().decode(&json).unwrap();
     let kinds: Vec<RecordKind> = decoded
         .conversation
         .records
@@ -65,7 +65,7 @@ fn decode_json_document_and_log() {
 
     let log = dir.path().join("run.log");
     std::fs::write(&log, "user: first\n\nassistant: second\n").unwrap();
-    let decoded = aco_openclaw::codec().decode(&log).unwrap();
+    let decoded = acop_openclaw::codec().decode(&log).unwrap();
     let kinds: Vec<RecordKind> = decoded
         .conversation
         .records
@@ -77,7 +77,7 @@ fn decode_json_document_and_log() {
 
 #[test]
 fn select_session_files_accepts_the_licoup_extension_set() {
-    let codec = aco_openclaw::codec();
+    let codec = acop_openclaw::codec();
     let files = vec![
         PathBuf::from("a.jsonl"),
         PathBuf::from("b.ndjson"),
@@ -117,7 +117,7 @@ fn select_session_files_accepts_the_licoup_extension_set() {
 #[test]
 fn encode_store_path_and_redact_pass_through() {
     let dir = tempfile::tempdir().unwrap();
-    let codec = aco_openclaw::codec();
+    let codec = acop_openclaw::codec();
 
     let decoded = codec.decode(&jsonl_fixture(&dir)).unwrap();
     let encoded = codec.encode(&decoded.conversation).unwrap();
@@ -137,7 +137,7 @@ fn encode_store_path_and_redact_pass_through() {
 
 #[test]
 fn history_comes_from_the_card() {
-    let codec = aco_openclaw::codec();
+    let codec = acop_openclaw::codec();
     let history = codec.history();
     assert_eq!(
         history
@@ -164,7 +164,7 @@ fn sqlite_file_enumerates_session_keys() {
              INSERT INTO history VALUES ('conv-1', '{\"role\":\"assistant\",\"text\":\"hello\"}');",
         )
         .unwrap();
-    let sessions = aco_openclaw::codec().sessions_in_file(&db).unwrap();
+    let sessions = acop_openclaw::codec().sessions_in_file(&db).unwrap();
     assert!(!sessions.is_empty());
     assert!(sessions.iter().all(|s| s.key.is_some() && s.path == db));
 }

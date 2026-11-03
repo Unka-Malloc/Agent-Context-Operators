@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "aco_cursor"
+name = "acop_cursor"
 
 [dependencies]
 a4aa-cursor = { path = "../../../Adapter-For-All-Agents/crates/a4aa-cursor", version = "0.4.1" }
