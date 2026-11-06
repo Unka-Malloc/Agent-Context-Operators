@@ -50,6 +50,37 @@ fn decode_projects_blocks_and_usage() {
 }
 
 #[test]
+fn assistant_model_is_taken_from_the_message_not_its_wrapper() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("synthetic_42.jsonl");
+    for content in [
+        serde_json::json!("synthetic reply"),
+        serde_json::json!([{"type":"text","text":"synthetic reply"}]),
+    ] {
+        let event = serde_json::json!({
+            "type":"message",
+            "model":"wrapper-model",
+            "message":{
+                "role":"assistant","content":content,"model":"recorded-model",
+                "usage":{"inputTokens":10,"outputTokens":2}
+            }
+        });
+        std::fs::write(&path, format!("{event}\n")).unwrap();
+        let decoded = acop_pi::codec().decode(&path).unwrap();
+        assert!(matches!(&decoded.conversation.records[0].body,
+            Body::Assistant { model: Some(model), .. } if model == "recorded-model"));
+        let mut missing = event;
+        missing["message"].as_object_mut().unwrap().remove("model");
+        std::fs::write(&path, format!("{missing}\n")).unwrap();
+        let decoded = acop_pi::codec().decode(&path).unwrap();
+        assert!(matches!(
+            &decoded.conversation.records[0].body,
+            Body::Assistant { model: None, .. }
+        ));
+    }
+}
+
+#[test]
 fn session_id_prefers_header_over_filename() {
     let dir = fixture();
     let path = dir.path().join("myproj_42.jsonl");

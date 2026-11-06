@@ -225,7 +225,13 @@ impl Codec for PiCodec {
                                                     &mut record_lines,
                                                     index,
                                                     ts.clone(),
-                                                    Body::Assistant { text, model: None },
+                                                    Body::Assistant {
+                                                        text,
+                                                        model: message
+                                                            .get("model")
+                                                            .and_then(|value| value.as_str())
+                                                            .map(str::to_owned),
+                                                    },
                                                 );
                                             }
                                         }
@@ -237,7 +243,13 @@ impl Codec for PiCodec {
                                     &mut record_lines,
                                     index,
                                     ts.clone(),
-                                    Body::Assistant { text, model: None },
+                                    Body::Assistant {
+                                        text,
+                                        model: message
+                                            .get("model")
+                                            .and_then(|value| value.as_str())
+                                            .map(str::to_owned),
+                                    },
                                 );
                             }
                             usage_meta(&value, message).into_iter().for_each(|body| {

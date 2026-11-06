@@ -105,6 +105,29 @@ fn decode_projects_every_wire_kind() {
 }
 
 #[test]
+fn usage_model_preserves_same_record_identity_before_wrapper_identity() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = wire_fixture(tmp.path(), "synthetic-session", "main", None);
+    for field in ["usage", "token_usage"] {
+        let mut event = json!({
+            "type":"usage.record","usageScope":"turn","model":"wrapper-model",
+            "time":"2026-07-15T10:00:00Z"
+        });
+        event[field] = json!({"model":"recorded-model","input_tokens":10,"output_tokens":2});
+        fs::write(&path, format!("{event}\n")).unwrap();
+        let decoded = acop_kimi_code::codec().decode(&path).unwrap();
+        match &decoded.conversation.records[0].body {
+            Body::Meta { subtype, data } => {
+                assert_eq!(subtype, "usage");
+                assert_eq!(data["model"], "recorded-model");
+                assert_eq!(data["usage"]["totalTokens"], 12);
+            }
+            other => panic!("expected usage, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn session_id_encodes_agent_ancestry() {
     let codec = acop_kimi_code::codec();
     let main = Path::new("/x/.kimi-code/wd/session-9/agents/main/wire.jsonl");

@@ -932,7 +932,15 @@ fn usage_meta(value: &Value, native_type: &str) -> Option<Body> {
         json!(scope.unwrap_or_else(|| "turn".to_string())),
     );
     data.insert("sourceEventType".to_string(), json!(native_type));
-    if let Some(model) = find_string(value, &["model"]) {
+    let model = value
+        .get("usage")
+        .or_else(|| value.get("token_usage"))
+        .and_then(|usage| usage.get("model"))
+        .and_then(Value::as_str)
+        .filter(|model| !model.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| find_string(value, &["model"]));
+    if let Some(model) = model {
         data.insert("model".to_string(), json!(model));
     }
     Some(Body::Meta {
