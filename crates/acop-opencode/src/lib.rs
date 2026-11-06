@@ -118,8 +118,7 @@ impl Codec for OpenCodeCodec {
     }
 
     /// The store's own archive flag is `session_v2.time_archived` — the
-    /// same column opencode's list hides on and Probator's conceal sweep
-    /// has always flipped. Only database-row sessions carry it; plain
+    /// same column opencode's list hides on. Only database-row sessions carry it; plain
     /// transcript files report no marker.
     fn archive_session(&self, session: &SessionRef, _home: &Path, dry_run: bool) -> Result<bool> {
         let Some(key) = session.key.as_deref() else {

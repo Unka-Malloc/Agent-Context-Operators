@@ -123,8 +123,8 @@ exists — codex rollouts relocate under `~/.codex/archived_sessions/`
 session stays listed rather than pretending to hide.
 
 `--agent` is optional: with only a bare id every codec's store is
-tried in turn — callers holding an unlabeled session id (Probator's
-`audit-session.json`) get the same behavior without naming the lane.
+tried in turn — callers holding an unlabeled session id get the same
+behavior without naming the lane.
 
 ## edit
 

@@ -460,8 +460,8 @@ fn cmd_fork(args: &Args, home: &Path, json_out: bool) -> Result<(), Error> {
 fn cmd_archive(args: &Args, home: &Path, json_out: bool) -> Result<(), Error> {
     let session = args.require("session")?;
     // `--agent` scopes the lookup; without it every codec's store is
-    // tried — Probator records ids without lane labels, so callers
-    // holding just an id get the same archive behavior.
+    // tried — callers that record ids without lane labels and hold
+    // just an id get the same archive behavior.
     let codec = match args.get("agent") {
         Some(name) => codec_named(name)?,
         None => registry()
