@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{codec::Codec, Error, Result};
 
+pub use acop_usage_core::{QueryOutput, ReadPlan, ReadQuery, SchemaCapture, SqliteUsageSpec};
+pub mod sqlite_usage;
+
 /// A declared location in an agent's history surface — ACOP's own
 /// vocabulary. `acop-<agent>` codecs fill it from the owning descriptor
 /// (today: the `a4aa-<agent>` card's `history`); ACOP never hardcodes

@@ -71,6 +71,10 @@ impl Codec for HermesCodec {
         a4aa_hermes::card().usage.transcript
     }
 
+    fn stored_usage(&self) -> Option<&'static acop::store::SqliteUsageSpec> {
+        Some(a4aa_hermes::stored_usage())
+    }
+
     fn session_kinds(&self) -> &'static [&'static str] {
         &["hermes-profile-store"]
     }
@@ -185,4 +189,18 @@ fn extension_of(path: &Path) -> String {
         .and_then(|e| e.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase()
+}
+
+#[cfg(test)]
+mod stored_usage_tests {
+    use super::*;
+
+    #[test]
+    fn stored_usage_projects_the_descriptor() {
+        let codec = HermesCodec;
+        assert!(std::ptr::eq(
+            Codec::stored_usage(&codec).unwrap(),
+            a4aa_hermes::stored_usage()
+        ));
+    }
 }

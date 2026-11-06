@@ -148,6 +148,13 @@ pub trait Codec {
         None
     }
 
+    /// The sqlite usage store the agent's descriptor declares, if any —
+    /// counters kept in database tables rather than transcript records,
+    /// read through `store::sqlite_usage`.
+    fn stored_usage(&self) -> Option<&'static crate::store::SqliteUsageSpec> {
+        None
+    }
+
     /// History kinds from `card().history` that hold *sessions* this
     /// codec reads (e.g. `codex-session-store`). Other declared roots —
     /// prompt history, memory files, indexes — are stores ACOP reports

@@ -41,6 +41,9 @@ the runtime adapter uses — one data authority, two consumers.
   declared `HistoryRoot`s, the `Codec` trait and capability matrix,
   selectors, search/edit/snapshot engines, the `acop-conversation/1`
   document format.
+- `crates/acop-usage-core` — pure schema planning and usage-record
+  decoding for declared sqlite usage stores; `acop::store` re-exports
+  its contract and executes its read plans read-only.
 - `crates/acop-cli` — the `acop` binary and the codec registry.
 - `crates/acop-<agent>` — one codec per agent (`acop-antigravity`,
   `acop-claude`, `acop-codex`, `acop-copilot`, `acop-cursor`, `acop-dsh`,

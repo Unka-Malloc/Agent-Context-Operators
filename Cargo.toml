@@ -10,6 +10,7 @@ repository = "https://github.com/Unka-Malloc/ACOP"
 
 [workspace.dependencies]
 acop = { path = "crates/acop", version = "0.1.2" }
+acop-usage-core = { path = "crates/acop-usage-core", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
