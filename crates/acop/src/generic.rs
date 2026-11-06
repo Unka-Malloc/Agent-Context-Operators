@@ -1526,7 +1526,7 @@ fn working_directory(value: &Value) -> Option<String> {
         .trim();
     if directory.is_empty()
         || directory.len() > 4096
-        || !Path::new(directory).is_absolute()
+        || !util::recorded_absolute(directory)
         || directory.chars().any(char::is_control)
     {
         return None;

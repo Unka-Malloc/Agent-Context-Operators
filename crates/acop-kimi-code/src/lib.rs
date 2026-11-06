@@ -778,7 +778,10 @@ fn apply_session_state(path: &Path, conv: &mut Conversation) {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|v| {
-            !v.is_empty() && v.len() <= 4096 && !v.contains('\0') && Path::new(v).is_absolute()
+            !v.is_empty()
+                && v.len() <= 4096
+                && !v.contains('\0')
+                && acop::util::recorded_absolute(v)
         })
         .map(str::to_string)
         .or(conv.cwd.take());

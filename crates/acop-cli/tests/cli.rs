@@ -9,6 +9,10 @@ fn acop(home: &Path, args: &[&str]) -> (bool, String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_acop"))
         .args(args)
         .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("APPDATA", home.join("AppData/Roaming"))
+        .env("LOCALAPPDATA", home.join("AppData/Local"))
+        .env("XDG_CONFIG_HOME", home.join(".config"))
         .output()
         .expect("acop runs");
     (

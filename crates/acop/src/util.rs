@@ -15,6 +15,22 @@ pub fn home() -> Result<PathBuf> {
     std::env::home_dir().ok_or_else(|| Error::Usage("cannot resolve home directory".into()))
 }
 
+/// A recorded cwd may have been written on a different OS family — accept
+/// unix-rooted, drive-lettered and UNC absolutes as recorded evidence, not
+/// only paths the local `Path` calls absolute.
+pub fn recorded_absolute(directory: &str) -> bool {
+    if Path::new(directory).is_absolute() {
+        return true;
+    }
+    if directory.starts_with('/') || directory.starts_with('\\') {
+        return true;
+    }
+    match directory.as_bytes() {
+        [drive, b':', sep, ..] => drive.is_ascii_alphabetic() && (*sep == b'\\' || *sep == b'/'),
+        _ => false,
+    }
+}
+
 /// Expand an a4aa `{home}`-relative template.
 pub fn expand_home(template: &str, home: &Path) -> PathBuf {
     match template.strip_prefix("{home}") {

@@ -150,7 +150,18 @@ pub fn backup_file(home: &Path, source: &Path) -> Result<PathBuf> {
             .trim_end_matches('Z'),
         &uuid::Uuid::new_v4().to_string()[..8]
     );
-    let rel = source.strip_prefix("/").unwrap_or(source);
+    // Mirror the absolute source path below the backup root: drop the
+    // platform root components (a unix `/` or a windows drive prefix) so
+    // `join` can never collapse back onto the source itself.
+    let rel: PathBuf = source
+        .components()
+        .skip_while(|c| {
+            matches!(
+                c,
+                std::path::Component::Prefix(_) | std::path::Component::RootDir
+            )
+        })
+        .collect();
     let dest = backups_dir(home).join(stamp).join(rel);
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(Error::io(parent))?;

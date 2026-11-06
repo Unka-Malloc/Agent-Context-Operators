@@ -778,7 +778,7 @@ fn bounded_workspace(raw: &str) -> Option<String> {
         return None;
     }
     let path = Path::new(trimmed);
-    if !path.is_absolute() || path.parent().is_none() {
+    if !acop::util::recorded_absolute(trimmed) || path.parent().is_none() {
         return None;
     }
     if let Some(home) = std::env::home_dir() {

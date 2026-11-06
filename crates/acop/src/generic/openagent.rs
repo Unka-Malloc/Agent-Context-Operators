@@ -331,7 +331,10 @@ fn openagent_parts(connection: &Connection, session_id: &str) -> HashMap<String,
         let (Some(message_id), Some(data)) = (message_id, data) else {
             continue;
         };
-        let value = serde_json::from_str::<Value>(&data).unwrap_or_else(|_| Value::String(data));
+        let value = match serde_json::from_str::<Value>(&data) {
+            Ok(value) => value,
+            Err(_) => Value::String(data),
+        };
         out.entry(message_id).or_insert_with(Vec::new).push(value);
     }
     out
@@ -1277,7 +1280,7 @@ fn epoch_value_to_rfc3339(value: &Value) -> Option<String> {
 /// policy: a recorded directory must trim to an absolute path.
 fn bounded_workspace(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
-    if trimmed.is_empty() || !Path::new(trimmed).is_absolute() {
+    if trimmed.is_empty() || !crate::util::recorded_absolute(trimmed) {
         return None;
     }
     Some(trimmed.to_string())

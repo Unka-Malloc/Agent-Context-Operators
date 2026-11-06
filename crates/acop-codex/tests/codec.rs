@@ -123,8 +123,9 @@ fn store_path_layout() {
     let mut conv = acop::Conversation::new("abcdefab-0000-0000-0000-000000000000");
     conv.cwd = Some("/tmp/proj".into());
     let p = acop_codex::codec().store_path(home.path(), &conv).unwrap();
-    let s = p.to_string_lossy();
-    assert!(s.contains("/.codex/sessions/"), "{s}");
+    let mut parts = p.strip_prefix(home.path()).unwrap().components();
+    assert_eq!(parts.next().unwrap().as_os_str(), ".codex");
+    assert_eq!(parts.next().unwrap().as_os_str(), "sessions");
     assert!(p
         .file_name()
         .unwrap()
