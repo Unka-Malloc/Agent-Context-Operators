@@ -42,7 +42,7 @@ dependencies resolve it at the version `Cargo.toml` declares:
 
 | Path | Repository | Provides |
 | --- | --- | --- |
-| `../Adapter-For-All-Agents` | `Unka-Malloc/Adapter-For-All-Agents` | `a4aa`, `a4aa-<agent>` |
+| `../Adapter-For-All-Agents` | `Unka-Malloc/Adapters-for-All-Agents` | `a4aa`, `a4aa-<agent>` |
 
 Clone it beside this repository before building; a fresh clone without
 it cannot compile.
