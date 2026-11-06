@@ -2,12 +2,12 @@
 //!
 //! The a4aa card declares one session root — `~/.gemini/antigravity-cli`
 //! (`antigravity-cli-session-store`, a plain directory). Antigravity has
-//! no bespoke wire format LicoUp knows: session artifacts land as
+//! no bespoke wire format: session artifacts land as
 //! JSONL/NDJSON event logs, single JSON documents, markdown or plaintext
 //! transcripts, and SQLite databases (`*.sqlite`/`*.sqlite3`/`*.db`/
 //! `*.vscdb`), so every artifact decodes through the shared
 //! [`acop::generic`] lane. This codec contributes the store facts only:
-//! the accepted extension set with LicoUp's exclusions, container
+//! the accepted extension set with its exclusions, container
 //! enumeration as one [`SessionRef`] per stored session key, and the
 //! `<session-id>.jsonl` import path under the store root.
 
@@ -19,7 +19,7 @@ use acop::store::HistoryRoot;
 use acop::{Error, Result};
 use serde_json::Value;
 
-/// Extensions LicoUp's `antigravity` history adapter accepts as
+/// Extensions the `antigravity` codec accepts as
 /// session-shaped artifacts under the store root.
 const ACCEPTED_EXTENSIONS: &[&str] = &[
     "jsonl", "ndjson", "json", "md", "txt", "log", "sqlite", "sqlite3", "db", "vscdb",
@@ -86,8 +86,8 @@ impl Codec for AntigravityCodec {
         acop::generic::session_id(path)
     }
 
-    /// LicoUp's `accepts_file` extension set for the `antigravity`
-    /// adapter, minus its global exclusions (`*.backup`,
+    /// The accepted extension set for the `antigravity`
+    /// store, minus the global exclusions (`*.backup`,
     /// `codebase-external.sqlite`).
     fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
         files
@@ -172,7 +172,7 @@ impl Codec for AntigravityCodec {
     }
 }
 
-/// File names LicoUp excludes before extension matching.
+/// File names excluded before extension matching.
 fn rejected_file_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())

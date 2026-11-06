@@ -121,7 +121,7 @@ fn session_id_prefers_header_then_directory_name() {
 }
 
 #[test]
-fn select_session_files_accepts_the_licoup_extension_set() {
+fn select_session_files_accepts_the_declared_extension_set() {
     let files: Vec<std::path::PathBuf> = [
         "events.jsonl",
         "log.ndjson",

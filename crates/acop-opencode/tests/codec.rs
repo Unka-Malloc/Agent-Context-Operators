@@ -87,7 +87,7 @@ fn decode_json_document_and_text() {
 }
 
 #[test]
-fn select_session_files_accepts_the_licoup_extension_set() {
+fn select_session_files_accepts_the_declared_extension_set() {
     let codec = acop_opencode::codec();
     let files = vec![
         PathBuf::from("a.jsonl"),

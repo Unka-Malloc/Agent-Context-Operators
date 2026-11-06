@@ -84,8 +84,8 @@ fn openagent_db(dir: &tempfile::TempDir) -> std::path::PathBuf {
             [],
         )
         .unwrap();
-    // Distinct `time_created` values pin the part order the codec inherits
-    // from LicoUp (`time_created ASC, id ASC`); equal timestamps would sort
+    // Distinct `time_created` values pin the part order the codec reads
+    // in (`time_created ASC, id ASC`); equal timestamps would sort
     // by `id` instead.
     for (id, message, session, created, data) in [
         (
@@ -458,7 +458,7 @@ fn history_comes_from_the_card() {
 }
 
 #[test]
-fn select_session_files_accepts_the_licoup_extension_set() {
+fn select_session_files_accepts_the_declared_extension_set() {
     let codec = acop_kilo_code::codec();
     let files = vec![
         std::path::PathBuf::from("a.jsonl"),

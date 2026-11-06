@@ -7,8 +7,7 @@
 //! (`.md`/`.markdown`/`.txt`/`.log`). [`dispatch`] picks the decoder by
 //! file extension; [`accepts`] is the format side of `accepts_file`.
 //!
-//! The decoding semantics are ported from LicoUp's service-neutral
-//! `history/generic.rs`: message objects carry `role`/`type`/`content`/
+//! The decoding semantics are service-neutral: message objects carry `role`/`type`/`content`/
 //! `text` variants, assistant `content` block arrays fan out into one
 //! record per block (`thinking`/`toolCall`-typed blocks become
 //! `reasoning`/`tool-call`), `usage` objects on message-bearing lines
@@ -154,7 +153,7 @@ pub fn session_id(path: &Path) -> String {
 /// One `.jsonl` line's session group: its declared session keys, else
 /// the directory-layout uuid the path carries (`brain/<uuid>/x.jsonl`).
 /// Lines resolving to nothing carry no session identity and never
-/// decode — LicoUp's `native_session_id_or_layout` drops them outright.
+/// decode — they are dropped outright.
 fn line_group_id(value: &Value, path: &Path) -> Option<String> {
     line_session_id(value).or_else(|| {
         path.components().rev().skip(1).find_map(|component| {
@@ -349,7 +348,7 @@ fn decode_jsonl_lines(path: &Path, agent: &str, group: Option<&str>) -> Result<D
 /// messages array, or a top-level array of message objects).
 ///
 /// `record_lines` carries the source item's index inside the array it
-/// was collected from (LicoUp's message-index semantics); `line_count`
+/// was collected from (message-index semantics); `line_count`
 /// is the document's text line count.
 pub fn decode_json_document(path: &Path, agent: &str) -> Result<Decoded> {
     let text = std::fs::read_to_string(path).map_err(Error::io(path))?;
@@ -393,7 +392,7 @@ pub fn decode_json_document(path: &Path, agent: &str) -> Result<Decoded> {
 }
 
 /// Document keys whose array items are individually-addressed
-/// sessions — LicoUp's `collect_explicit_json_sessions` container
+/// sessions — the explicit container
 /// vocabulary (`sessions`/`conversations`/`chats`/`chatSessions`).
 const EXPLICIT_SESSION_KEYS: &[&str] = &["sessions", "conversations", "chats", "chatSessions"];
 
@@ -840,7 +839,7 @@ fn text_body(role: &str, text: String, model: Option<String>, source: &Value) ->
 }
 
 /// A non-text semantic becomes the record kind it declares — the
-/// structured-message half of LicoUp's projection.
+/// structured-message half of the projection.
 fn structured_body(kind: MessageKind, semantic: &str, value: &Value) -> Body {
     let payload = message_payload(value);
     let event_record = |semantic: &str| Body::System {
@@ -1518,7 +1517,7 @@ fn document_title(value: &Value) -> Option<String> {
 }
 
 /// A recorded working directory: absolute, bounded, free of control
-/// characters — the validity half of LicoUp's cwd read.
+/// characters — the validity half of the cwd read.
 fn working_directory(value: &Value) -> Option<String> {
     let directory = ["cwd", "workingDirectory", "projectPath"]
         .iter()
@@ -1603,8 +1602,7 @@ enum RolePrefix {
 }
 
 /// `user:`/`human:`/`prompt:`/`question:` open user records;
-/// `assistant:`/`agent:`/`response:`/`answer:` open assistant records —
-/// LicoUp's `looks_like_text_conversation` prefix set.
+/// `assistant:`/`agent:`/`response:`/`answer:` open assistant records.
 fn role_prefixed(line: &str) -> Option<RolePrefix> {
     let lower = line.to_ascii_lowercase();
     for prefix in ["user:", "human:", "prompt:", "question:"] {
@@ -1673,7 +1671,7 @@ pub fn sqlite_row_may_hold_history(_table: &str, key: Option<&str>, text: &str) 
         || looks_like_history_text(text)
 }
 
-/// `looks_like_history_text` — LicoUp's default row gate.
+/// `looks_like_history_text` — the default row gate.
 fn looks_like_history_text(raw: &str) -> bool {
     let lower = raw.to_ascii_lowercase();
     lower.contains("assistant")
@@ -1697,7 +1695,7 @@ pub fn sqlite_session_keys(path: &Path) -> Result<Vec<String>> {
 
 /// Container refs for the probed row groups: `key` is the `table/key`
 /// selector `decode_sqlite` accepts, `id` is the session id the group
-/// decodes to — LicoUp scopes exact reads by that id, never by the
+/// decodes to — hosts scope exact reads by that id, never by the
 /// selector, so the two must not collapse into one string.
 pub fn sqlite_session_refs(path: &Path) -> Result<Vec<crate::codec::SessionRef>> {
     Ok(probe_sqlite(path)?
@@ -1784,7 +1782,7 @@ struct ProbedRow {
 /// `parse_generic_sqlite_sessions`: open read-only, probe each
 /// history-candidate table's rows, and group the qualifying rows by
 /// their key column — rows sharing a `key`/`id`/`sessionId` value are
-/// one session (LicoUp's `push_grouped_message`), a keyless row is its
+/// one session, a keyless row is its
 /// own `table:index` group. A row whose fields carry no decodable JSON
 /// still joins its group as a `meta{row}` record holding the raw
 /// field values — the source's "record" card fallback.
@@ -1840,7 +1838,7 @@ fn probe_sqlite(path: &Path) -> Result<Vec<ProbedRow>> {
             {
                 Some(group) => group,
                 None => {
-                    // LicoUp's session id is the row key itself; a
+                    // The session id is the row key itself; a
                     // keyless row falls back to `table:index`.
                     groups.push(ProbedRow {
                         selector: format!("{table}/{group_key}"),
@@ -2721,7 +2719,7 @@ mod tests {
         }
 
         // The key-less blob table decodes under its row-index selector —
-        // LicoUp's `table:index` identity.
+        // the `table:index` identity.
         let blob = decode_sqlite(&path, Some("chat_blobs/0"), "synthetic").unwrap();
         assert_eq!(blob.conversation.session_id, "chat_blobs:0");
         match &blob.conversation.records[0].body {

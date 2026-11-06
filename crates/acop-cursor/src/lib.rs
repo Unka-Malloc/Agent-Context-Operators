@@ -1,7 +1,6 @@
 //! acop codec: the `cursor` conversation store.
 //!
-//! Cursor persists conversations in four shapes, all ported from LicoUp's
-//! conversation-store knowledge:
+//! Cursor persists conversations in four shapes:
 //!
 //! - **IDE composer store** — `state.vscdb` under
 //!   `User/{workspaceStorage,globalStorage}`: one `cursorDiskKV` table holds
@@ -77,8 +76,7 @@ static CAPABILITIES: CapabilityMatrix = CapabilityMatrix::new(
     ],
 );
 
-/// File extensions Cursor stores conversation artifacts under (mirrors
-/// LicoUp's `HistoryAdapter::Cursor` accepts-file set).
+/// File extensions Cursor stores conversation artifacts under.
 const SESSION_EXTENSIONS: &[&str] = &[
     "jsonl", "ndjson", "json", "sqlite", "sqlite3", "db", "vscdb",
 ];
@@ -101,8 +99,8 @@ impl Codec for CursorCodec {
 
     fn history(&self) -> Vec<HistoryRoot> {
         let mut roots = a4aa_cursor::card().history.to_vec();
-        // LicoUp also reads the Windows (`{appdata}`) and Linux
-        // (`{xdg_config}`) homes of the same IDE stores; the card declares
+        // Cursor also keeps the same IDE stores under the Windows
+        // (`{appdata}`) and Linux (`{xdg_config}`) homes; the card declares
         // only the macOS `{home}/Library/Application Support` pair. These
         // are genuinely Cursor's own conversation stores, so the codec
         // declares them itself.
@@ -418,7 +416,7 @@ impl CursorCodec {
         }
         match root.kind {
             // Only `state.vscdb` inside the IDE storage trees is a
-            // conversation store; the walk stays bounded like LicoUp's.
+            // conversation store; the walk stays bounded.
             "cursor-workspace-storage" | "cursor-global-storage" => Ok(collect_named_files(
                 path,
                 IDE_STORE_FILE,
@@ -555,7 +553,7 @@ fn sqlite_value_text(value: ValueRef<'_>) -> Option<String> {
     }
 }
 
-/// Epoch number → RFC 3339; LicoUp's magnitude rule: µs ≥ 1e15, ms ≥ 1e10,
+/// Epoch number → RFC 3339 by magnitude: µs ≥ 1e15, ms ≥ 1e10,
 /// else seconds. Non-positive values carry no time.
 fn epoch_to_rfc3339(value: i64) -> Option<String> {
     if value <= 0 {

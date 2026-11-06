@@ -2,12 +2,12 @@
 //!
 //! The a4aa card declares one session root — `~/.openclaw`
 //! (`openclaw-store`, a plain directory). OpenClaw has no bespoke wire
-//! format LicoUp knows: session artifacts land as JSONL/NDJSON event
+//! format: session artifacts land as JSONL/NDJSON event
 //! logs, single JSON documents, markdown or plaintext transcripts, and
 //! SQLite databases (`*.sqlite`/`*.sqlite3`/`*.db`), so every artifact
 //! decodes through the shared [`acop::generic`] lane. This codec
 //! contributes the store facts only: the accepted extension set with
-//! LicoUp's exclusions, container enumeration as one [`SessionRef`] per
+//! its exclusions, container enumeration as one [`SessionRef`] per
 //! stored session key, and the `<session-id>.jsonl` import path under
 //! the store root.
 
@@ -19,7 +19,7 @@ use acop::store::HistoryRoot;
 use acop::{Error, Result};
 use serde_json::Value;
 
-/// Extensions LicoUp's `openclaw` history adapter accepts as
+/// Extensions the `openclaw` codec accepts as
 /// session-shaped artifacts under the store root.
 const ACCEPTED_EXTENSIONS: &[&str] = &[
     "jsonl", "ndjson", "json", "md", "txt", "log", "sqlite", "sqlite3", "db",
@@ -86,8 +86,8 @@ impl Codec for OpenClawCodec {
         acop::generic::session_id(path)
     }
 
-    /// LicoUp's `accepts_file` extension set for the `openclaw`
-    /// adapter, minus its global exclusions (`*.backup`,
+    /// The accepted extension set for the `openclaw`
+    /// store, minus the global exclusions (`*.backup`,
     /// `codebase-external.sqlite`).
     fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
         files
@@ -175,7 +175,7 @@ impl Codec for OpenClawCodec {
     }
 }
 
-/// File names LicoUp excludes before extension matching.
+/// File names excluded before extension matching.
 fn rejected_file_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())

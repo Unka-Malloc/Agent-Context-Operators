@@ -805,7 +805,7 @@ enum PartKind {
     Event,
 }
 
-/// LicoUp `history_message_kind_from_semantic`, folded onto canonical
+/// Message semantic → kind, folded onto canonical
 /// kinds: text-ish semantics stay text, `reasoning|analysis|thinking`
 /// → reasoning, error semantics → error, attachment/metadata → meta,
 /// `tool|function` + result markers → tool result, `tool|function` →
@@ -900,7 +900,7 @@ fn semantic_kind(semantic: &str) -> PartKind {
     PartKind::Event
 }
 
-/// LicoUp `normalize_history_message_semantic` — lowercase alnum runs
+/// Semantic normalization — lowercase alnum runs
 /// joined by `-`.
 fn normalize_semantic(value: &str) -> String {
     let mut normalized = String::new();
@@ -940,7 +940,7 @@ fn part_call_id(part: &Value) -> Option<String> {
     )
 }
 
-/// LicoUp `extract_role`: user/human → `user`, assistant/agent/model/ai
+/// Role extraction: user/human → `user`, assistant/agent/model/ai
 /// → `agent`, tool → `tool`, else the raw role (default `system`).
 fn extract_role(value: &Value) -> String {
     let role = find_string(value, &["role", "author", "speaker", "type", "source"])
@@ -963,7 +963,7 @@ fn extract_role(value: &Value) -> String {
     }
 }
 
-/// LicoUp `find_string`: key lookup descending through `message` nests;
+/// Key lookup descending through `message` nests;
 /// strings and integers both resolve.
 fn find_string(value: &Value, keys: &[&str]) -> Option<String> {
     let mut candidate = value;
@@ -1034,7 +1034,7 @@ fn usage_container(value: &Value) -> Option<&Value> {
     None
 }
 
-/// LicoUp `openagent_usage_from_columns`: session token columns → the
+/// Session token columns → the
 /// normalized counter object (`source: openagent-sqlite`).
 fn session_usage(
     input: Option<i64>,
@@ -1068,7 +1068,7 @@ fn session_usage(
     }))
 }
 
-/// LicoUp `extract_text`: depth-first walk over `text|content|message|
+/// Text extraction: depth-first walk over `text|content|message|
 /// messages|prompt|response|answer|summary|value|parts|items|turns`,
 /// skipping tool/metadata-typed objects and joining survivors on `\n`.
 fn extract_text(value: &Value) -> Option<String> {
@@ -1276,7 +1276,7 @@ fn epoch_value_to_rfc3339(value: &Value) -> Option<String> {
         .and_then(epoch_number_to_rfc3339)
 }
 
-/// LicoUp `bounded_project_workspace`, minus the platform unbounded-root
+/// Recorded workspace bound, without a platform unbounded-root
 /// policy: a recorded directory must trim to an absolute path.
 fn bounded_workspace(raw: &str) -> Option<String> {
     let trimmed = raw.trim();

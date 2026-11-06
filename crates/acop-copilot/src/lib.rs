@@ -59,7 +59,7 @@ const CHAT_SESSION_KEY_PREFIX: &str = "github.copilot-chat.chatSessions#";
 /// `SessionRef::key` prefix selecting one `sessions`-table row id — the
 /// row's content lives in `session-state/<id>/events.jsonl`.
 const SESSION_INDEX_KEY_PREFIX: &str = "sessions:";
-/// LicoUp's `accepts_file` set for copilot stores — transcripts and the
+/// The accepted extension set for copilot stores — transcripts and the
 /// SQLite containers sessions live in.
 const ACCEPTED_EXTENSIONS: &[&str] = &[
     "jsonl", "ndjson", "json", "sqlite", "sqlite3", "db", "vscdb",
@@ -127,7 +127,7 @@ impl Codec for CopilotCodec {
             .unwrap_or_else(|| "copilot-session".to_string())
     }
 
-    /// The extension set LicoUp's copilot catalog accepts — transcripts
+    /// The extension set the copilot stores hold — transcripts
     /// and SQLite containers; a non-transcript `.json` document decodes
     /// to nothing on its own.
     fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -284,7 +284,7 @@ impl Codec for CopilotCodec {
             };
         }
         let raw = std::fs::read_to_string(path).map_err(Error::io(path))?;
-        // `.json` documents decode through the shared lane — LicoUp's
+        // `.json` documents decode through the shared lane — its
         // generic `sessions[]`/`chatSessions[]` container semantics
         // cover every copilot JSON artifact shape.
         if file_extension(path) == "json" {
@@ -446,13 +446,11 @@ impl Codec for CopilotCodec {
 }
 
 // ---------------------------------------------------------------------------
-// Transcript decode — `events.jsonl` rows, ported from LicoUp's
-// `parse_copilot_transcript_session`.
+// Transcript decode — `events.jsonl` rows.
 // ---------------------------------------------------------------------------
 
-/// The semantic buckets the native `type` field maps onto — LicoUp's
-/// `HistoryMessageKind`, kept verbatim so event-type routing does not
-/// drift between the two readers.
+/// The semantic buckets the native `type` field maps onto — a fixed
+/// vocabulary, so event-type routing stays stable as native types grow.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SemanticKind {
     Text,
@@ -1034,8 +1032,7 @@ fn project_chat_session(item: &Value, index: usize) -> Decoded {
 }
 
 // ---------------------------------------------------------------------------
-// SQLite containers — ported from LicoUp's `copilot_vscode_*_catalog` and
-// `read_copilot_sessions`.
+// SQLite containers — VS Code state stores and the session index.
 // ---------------------------------------------------------------------------
 
 /// Open a store read-only the way the native readers do.
@@ -1065,7 +1062,7 @@ fn table_exists(connection: &rusqlite::Connection, table: &str) -> bool {
 }
 
 /// Enumerate the session-bearing rows one database holds. Two recognized
-/// layouts, both ported from LicoUp's copilot readers:
+/// layouts:
 ///
 /// - `ItemTable(key, value)` — VS Code state stores; the
 ///   `github.copilot-chat.chatSessions` key's document carries one
@@ -1196,7 +1193,7 @@ fn sqlite_read_error(path: &Path) -> Error {
 }
 
 // ---------------------------------------------------------------------------
-// Field extraction — generic-name ports of LicoUp's history helpers.
+// Field extraction — generic field-name helpers.
 // ---------------------------------------------------------------------------
 
 fn push(
@@ -1286,8 +1283,7 @@ fn chat_session_id(item: &Value) -> Option<String> {
     .filter(|value| !value.trim().is_empty())
 }
 
-/// Timestamp keys native records carry, descending one `message` level —
-/// the same key set LicoUp's `extract_timestamp` reads.
+/// Timestamp keys native records carry, descending one `message` level.
 fn extract_timestamp(value: &Value) -> Option<String> {
     find_string(
         value,
@@ -1365,7 +1361,7 @@ fn find_string(value: &Value, keys: &[&str]) -> Option<String> {
 }
 
 /// The tool's recorded name on a structured row — the native fields the
-/// store writes, in the order LicoUp's `structured_name` reads them.
+/// store writes, in precedence order.
 fn structured_name(value: &Value) -> Option<&str> {
     [
         "name",
@@ -1381,8 +1377,8 @@ fn structured_name(value: &Value) -> Option<&str> {
 
 /// Bounded text descent over the generic carriers a native payload uses.
 /// Objects typed as tool/metadata blocks are structure, not text; the
-/// embedded-JSON probe LicoUp runs for its generic adapters is not ported
-/// — copilot payloads carry text in string fields.
+/// embedded-JSON probe generic decoders run is not applied — copilot
+/// payloads carry text in string fields.
 fn extract_text(value: &Value) -> Option<String> {
     let mut pending = vec![value];
     let mut parts = Vec::new();
@@ -1470,8 +1466,8 @@ fn object_is_text(object: &serde_json::Map<String, Value>) -> bool {
 /// The model a record names: its own metadata containers only (the record,
 /// `data`, `message`, `modelInfo`, `request`, `response`, usage objects —
 /// never session state or content text), first concrete id wins, a
-/// remembered placeholder stands as fallback — the port of LicoUp's
-/// `extract_native_model`/`recorded_usage_model` over generic field names.
+/// remembered placeholder stands as fallback — read over generic field
+/// names.
 fn native_model(value: &Value) -> Option<String> {
     const MODEL_KEYS: &[&str] = &[
         "model",
@@ -1528,9 +1524,8 @@ fn native_model(value: &Value) -> Option<String> {
     fallback
 }
 
-/// The recorded model on the payload wins over one on the event envelope —
-/// LicoUp's `prefer_recorded_model`: concrete primary, then concrete
-/// related, then whatever was recorded.
+/// The recorded model on the payload wins over one on the event envelope:
+/// concrete primary, then concrete related, then whatever was recorded.
 fn prefer_model(primary: Option<String>, related: Option<String>) -> Option<String> {
     if primary.as_deref().is_some_and(is_concrete_model) {
         primary
@@ -1563,13 +1558,13 @@ fn has_structured_selector_syntax(raw: &str) -> bool {
     raw.starts_with(['{', '[', '"'])
 }
 
-/// The token counters a record carries — a bounded port of LicoUp's
-/// `extract_token_usage` over generic field names. The usage container is
+/// The token counters a record carries, read over generic field names
+/// within a bounded descent. The usage container is
 /// the record itself or its first nested `usage`/`data`/`payload`-style
 /// object with explicit counters; additive cache reads/writes fold into
 /// the prompt, reasoning counters into the completion, and a reported
-/// total stands over the sum. The uncounted-counter refusals LicoUp
-/// applies are not ported: a malformed counter reads as absent.
+/// total stands over the sum. A malformed counter reads as absent rather
+/// than refusing the record.
 fn extract_token_usage(value: &Value) -> Option<Value> {
     let usage = usage_container(value)?;
     let prompt_base = first_count(usage, PROMPT_FIELDS);

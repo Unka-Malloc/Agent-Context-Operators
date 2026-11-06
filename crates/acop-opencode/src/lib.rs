@@ -4,12 +4,12 @@
 //! `~/.local/share/opencode`, plus the same store under the
 //! `{xdg_data}`/`{appdata}` homes OpenCode's own tooling honors (the
 //! `opencode-config` roots are inventory, not sessions). OpenCode's data
-//! store holds no bespoke wire format LicoUp knows: session artifacts
+//! store holds no bespoke wire format: session artifacts
 //! land as JSONL/NDJSON event logs, single JSON documents, markdown or
 //! plaintext transcripts, and SQLite databases
 //! (`*.sqlite`/`*.sqlite3`/`*.db`), so every artifact decodes through the
 //! shared [`acop::generic`] lane. This codec contributes the store facts
-//! only: the accepted extension set with LicoUp's exclusions, container
+//! only: the accepted extension set with its exclusions, container
 //! enumeration as one [`SessionRef`] per stored session key, and the
 //! `<session-id>.jsonl` import path under the home store root.
 
@@ -21,7 +21,7 @@ use acop::store::HistoryRoot;
 use acop::{Error, Result};
 use serde_json::Value;
 
-/// Extensions LicoUp's `opencode` history adapter accepts as
+/// Extensions the `opencode` codec accepts as
 /// session-shaped artifacts under the store root.
 const ACCEPTED_EXTENSIONS: &[&str] = &[
     "jsonl", "ndjson", "json", "md", "txt", "log", "sqlite", "sqlite3", "db",
@@ -105,8 +105,8 @@ impl Codec for OpenCodeCodec {
         acop::generic::session_id(path)
     }
 
-    /// LicoUp's `accepts_file` extension set for the `opencode`
-    /// adapter, minus its global exclusions (`*.backup`,
+    /// The accepted extension set for the `opencode`
+    /// store, minus the global exclusions (`*.backup`,
     /// `codebase-external.sqlite`).
     fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
         files
@@ -241,7 +241,7 @@ impl Codec for OpenCodeCodec {
     }
 }
 
-/// File names LicoUp excludes before extension matching.
+/// File names excluded before extension matching.
 fn rejected_file_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())

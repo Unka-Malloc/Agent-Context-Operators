@@ -114,7 +114,7 @@ fn session_id_uses_uuid_layout_then_stem() {
 }
 
 #[test]
-fn select_session_files_accepts_the_licoup_extension_set() {
+fn select_session_files_accepts_the_declared_extension_set() {
     let codec = acop_antigravity::codec();
     let files = vec![
         PathBuf::from("a.jsonl"),

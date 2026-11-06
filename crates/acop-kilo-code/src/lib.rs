@@ -42,7 +42,7 @@ use serde_json::Value;
 
 const CAPABILITIES: CapabilityMatrix = CapabilityMatrix::READ_ONLY;
 
-/// Extensions LicoUp's `kilo-code` history adapter accepts as
+/// Extensions the `kilo-code` codec accepts as
 /// session-shaped artifacts under the store root.
 const ACCEPTED_EXTENSIONS: &[&str] = &[
     "jsonl", "ndjson", "json", "md", "txt", "log", "sqlite", "sqlite3", "db",
@@ -51,7 +51,7 @@ const ACCEPTED_EXTENSIONS: &[&str] = &[
 /// Extensions that open as SQLite containers for [`Codec::enumerate`].
 const SQLITE_EXTENSIONS: &[&str] = &["sqlite", "sqlite3", "db"];
 
-/// File names LicoUp excludes before extension matching.
+/// File names excluded before extension matching.
 fn rejected_file_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -139,7 +139,7 @@ impl Codec for KiloCodeCodec {
         &CAPABILITIES
     }
 
-    /// LicoUp's `accepts_file` set for the `kilo-code` adapter.
+    /// The accepted extension set for the `kilo-code` store.
     fn select_session_files(&self, files: Vec<PathBuf>) -> Vec<PathBuf> {
         files
             .into_iter()
