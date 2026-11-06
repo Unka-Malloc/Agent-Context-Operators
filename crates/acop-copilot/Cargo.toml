@@ -11,9 +11,8 @@ repository.workspace = true
 name = "acop_copilot"
 
 [dependencies]
-a4aa-copilot = "=0.4.1"
+a4aa-copilot = { path = "../../../Adapter-For-All-Agents/crates/a4aa-copilot", version = "0.5.0" }
 acop.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 rusqlite = { version = "0.40", features = ["bundled"] }
 

@@ -72,64 +72,21 @@ pub fn codec() -> &'static dyn Codec {
     &CopilotCodec
 }
 
-/// The card's declared history surface, projected onto the unified
-/// `acop::store` vocabulary: `a4aa-copilot` 0.4.1 ships the old a4aa
-/// `HistoryRoot`/`StoreKind` types — structurally identical but distinct.
-/// Rebind to the unified acop::store types after a4aa republishes; transitional projection.
-fn roots() -> Vec<HistoryRoot> {
-    a4aa_copilot::card()
-        .history
-        .iter()
-        .map(|root| HistoryRoot {
-            path: root.path,
-            kind: root.kind,
-            store: store_kind(root.store),
-        })
-        .collect()
-}
-
-/// Same transitional projection for the card's transcript-usage surface.
-fn usage_surface() -> Option<acop::store::TranscriptUsage> {
-    a4aa_copilot::card()
-        .usage
-        .transcript
-        .as_ref()
-        .map(|usage| acop::store::TranscriptUsage {
-            root: usage.root,
-            record: usage.record,
-            container: usage.container,
-            input: usage.input,
-            cached: usage.cached,
-            output: usage.output,
-            total: usage.total,
-            // The published card predates the temporality field; copilot
-            // transcript counters are per-record until the card republishes
-            // and declares otherwise.
-            temporality: acop::store::UsageTemporality::Delta,
-        })
-}
-
-/// Map the published card's `StoreKind` onto the unified vocabulary by
-/// name — the types are structurally identical but distinct until a4aa
-/// republishes.
-fn store_kind(store: impl serde::Serialize) -> StoreKind {
-    serde_json::to_value(store)
-        .ok()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or(StoreKind::Other)
-}
-
 impl Codec for CopilotCodec {
     fn id(&self) -> &'static str {
         "copilot"
     }
 
+    /// Store locations come from the `a4aa-copilot` card — the descriptor
+    /// stays the single authority; `a4aa`'s history vocabulary is `acop`'s
+    /// own (`a4aa::card` re-exports `acop::store`), so the projection is
+    /// the declaration itself.
     fn history(&self) -> Vec<HistoryRoot> {
-        roots()
+        a4aa_copilot::card().history.to_vec()
     }
 
     fn transcript_usage(&self) -> Option<acop::store::TranscriptUsage> {
-        usage_surface()
+        a4aa_copilot::card().usage.transcript
     }
 
     fn session_kinds(&self) -> &'static [&'static str] {
