@@ -1,7 +1,7 @@
 [package]
 name = "acop-copilot"
 description = "acop codec: the `copilot` (GitHub Copilot) conversation store (`~/.copilot` session-state `events.jsonl` transcripts, the `session-store.db` index, VS Code `state.vscdb` `chatSessions` rows) — decode, encode, redact and import-path knowledge."
-version = "0.1.2"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

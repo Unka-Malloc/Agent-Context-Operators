@@ -1,7 +1,7 @@
 [package]
 name = "acop-kilo-code"
 description = "acop codec: the `kilocode` (Kilo Code) conversation store (`~/.local/share/kilo/kilo.db` OpenCode-shaped sqlite `session`/`message`/`part` tables, generic sqlite probe fallback) — read-only enumerate, decode and redact knowledge."
-version = "0.1.2"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -11,7 +11,7 @@ repository.workspace = true
 name = "acop_kilo_code"
 
 [dependencies]
-a4aa-kilo-code = { path = "../../../Adapter-For-All-Agents/crates/a4aa-kilo-code", version = "0.4.1" }
+a4aa-kilo-code = { path = "../../../Adapter-For-All-Agents/crates/a4aa-kilo-code", version = "0.5.0" }
 acop.workspace = true
 serde.workspace = true
 serde_json.workspace = true

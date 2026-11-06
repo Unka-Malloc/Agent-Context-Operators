@@ -1,7 +1,7 @@
 [package]
 name = "acop-cli"
 description = "The `acop` binary: codec registry and command-line surface for Agent Context Operators."
-version = "0.1.2"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -13,18 +13,18 @@ path = "src/main.rs"
 
 [dependencies]
 acop.workspace = true
-acop-antigravity = { path = "../acop-antigravity", version = "0.1.2" }
-acop-claude = { path = "../acop-claude", version = "0.1.2" }
-acop-codex = { path = "../acop-codex", version = "0.1.2" }
-acop-copilot = { path = "../acop-copilot", version = "0.1.2" }
-acop-cursor = { path = "../acop-cursor", version = "0.1.2" }
-acop-dsh = { path = "../acop-dsh", version = "0.1.2" }
-acop-hermes = { path = "../acop-hermes", version = "0.1.2" }
-acop-kilo-code = { path = "../acop-kilo-code", version = "0.1.2" }
-acop-kimi-code = { path = "../acop-kimi-code", version = "0.1.2" }
-acop-openclaw = { path = "../acop-openclaw", version = "0.1.2" }
-acop-opencode = { path = "../acop-opencode", version = "0.1.2" }
-acop-pi = { path = "../acop-pi", version = "0.1.2" }
+acop-antigravity = { path = "../acop-antigravity", version = "0.2.0" }
+acop-claude = { path = "../acop-claude", version = "0.2.0" }
+acop-codex = { path = "../acop-codex", version = "0.2.0" }
+acop-copilot = { path = "../acop-copilot", version = "0.2.0" }
+acop-cursor = { path = "../acop-cursor", version = "0.2.0" }
+acop-dsh = { path = "../acop-dsh", version = "0.2.0" }
+acop-hermes = { path = "../acop-hermes", version = "0.2.0" }
+acop-kilo-code = { path = "../acop-kilo-code", version = "0.2.0" }
+acop-kimi-code = { path = "../acop-kimi-code", version = "0.2.0" }
+acop-openclaw = { path = "../acop-openclaw", version = "0.2.0" }
+acop-opencode = { path = "../acop-opencode", version = "0.2.0" }
+acop-pi = { path = "../acop-pi", version = "0.2.0" }
 serde_json.workspace = true
 
 [dev-dependencies]
