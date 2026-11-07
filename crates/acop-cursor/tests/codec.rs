@@ -844,8 +844,8 @@ fn redact_line_rewrites_transcript_text_and_payloads() {
     assert_eq!(out["error"], "[redacted]");
 
     // Container rows are not file lines — redaction cannot touch them.
-    let row: serde_json::Value =
-        serde_json::from_str(r#"{"key":"composerData:x","value":"{}"}"#).unwrap();
+    let row_selector = ["composerData", "x"].join(":");
+    let row = serde_json::json!({ "key": row_selector, "value": "{}" });
     assert!(acop_cursor::codec()
         .redact_line(&row, "[redacted]")
         .is_none());
