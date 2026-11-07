@@ -114,8 +114,9 @@ acop archive --session <id|path> [--agent <a>] [-o <file>] [--dry-run] [--json]
 ```
 
 Retains a finished session: the canonical transcript is exported to
-`-o` (default `~/.local/state/acop/archive/<agent>/<session>.json`),
-then the agent store's **own** archive marker is flipped where one
+`-o` (default `~/.local/state/acop/archive/<agent>/<sha256>.json`, the
+SHA-256 hex of the session id — the id comes from artifact content and
+never becomes a path; the report carries it), then the agent store's **own** archive marker is flipped where one
 exists — codex rollouts relocate under `~/.codex/archived_sessions/`
 (`thread/unarchive` is the return path), opencode `session_v2` rows get
 `time_archived`. Stores with no marker (claude, dsh, pi, …) report

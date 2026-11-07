@@ -341,7 +341,7 @@ pub struct ArchiveReport {
     pub session: String,
     pub source_path: PathBuf,
     /// The canonical document destination — `out` when given, else
-    /// `~/.local/state/acop/archive/<agent>/<session>.json`.
+    /// `~/.local/state/acop/archive/<agent>/<sha256(session)>.json`.
     pub transcript: PathBuf,
     pub transcript_written: bool,
     /// The store's archive marker was applied. `false` means the store
@@ -366,10 +366,7 @@ pub fn archive(
     let decoded = codec.decode_session(&entry.session)?;
     let transcript = match out {
         Some(path) => path.to_path_buf(),
-        None => util::state_dir(home)
-            .join("archive")
-            .join(codec.id())
-            .join(format!("{}.json", entry.session.id)),
+        None => archive_dir(home, codec).join(archive_file_name(&entry.session.id)),
     };
     if !dry_run {
         util::atomic_write(&transcript, &decoded.conversation.to_json())?;
@@ -384,6 +381,19 @@ pub fn archive(
         marked,
         dry_run,
     })
+}
+
+fn archive_dir(home: &Path, codec: &dyn Codec) -> PathBuf {
+    util::state_dir(home).join("archive").join(codec.id())
+}
+
+/// The default archive file name. The session id comes from artifact
+/// content, so it never becomes a path component: the SHA-256 hex of the
+/// id is one fixed-length component on every platform, and the report
+/// (and the document itself) carries the original id.
+fn archive_file_name(session_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}.json", Sha256::digest(session_id.as_bytes()))
 }
 
 /// Store-inventory rows for `acop stores`.
@@ -739,6 +749,73 @@ mod tests {
         assert!(!report.transcript_written);
         assert!(!dest3.exists());
         assert!(report.marked, "dry-run still reports the marker applies");
+    }
+
+    /// A codec whose store reports an artifact-chosen session id.
+    struct CraftedId(MockCodec, &'static str);
+    impl Codec for CraftedId {
+        fn id(&self) -> &'static str {
+            "crafted"
+        }
+        fn history(&self) -> Vec<HistoryRoot> {
+            self.0.history()
+        }
+        fn session_kinds(&self) -> &'static [&'static str] {
+            self.0.session_kinds()
+        }
+        fn capabilities(&self) -> &'static CapabilityMatrix {
+            self.0.capabilities()
+        }
+        fn session_id(&self, _path: &Path) -> String {
+            self.1.to_string()
+        }
+        fn decode(&self, path: &Path) -> Result<Decoded> {
+            self.0.decode(path)
+        }
+        fn encode(&self, c: &Conversation) -> Result<Encoded> {
+            self.0.encode(c)
+        }
+        fn store_path(&self, home: &Path, c: &Conversation) -> Result<PathBuf> {
+            self.0.store_path(home, c)
+        }
+        fn redact_line(&self, _l: &serde_json::Value, _m: &str) -> Option<serde_json::Value> {
+            None
+        }
+    }
+
+    #[test]
+    fn archive_never_uses_the_session_id_as_a_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let path = session_file(tmp.path(), "sess-1", 1);
+        for id in [
+            "../../../../escape",
+            "../escape",
+            "/absolute/escape",
+            r"..\..\escape",
+            r"C:\escape",
+            "C:escape",
+            "nested/escape",
+            ".",
+            "",
+        ] {
+            let codec = CraftedId(MockCodec("mock"), id);
+            let report = archive(&codec, &home, path.to_str().unwrap(), None, false).unwrap();
+            let dir = archive_dir(&home, &codec);
+            assert_eq!(report.transcript.parent().unwrap(), dir, "{id:?}");
+            let name = report.transcript.file_name().unwrap().to_str().unwrap();
+            let stem = name.strip_suffix(".json").unwrap();
+            assert_eq!(stem.len(), 64, "{id:?}");
+            assert!(stem.chars().all(|c| c.is_ascii_hexdigit()), "{id:?}");
+            assert!(report.transcript.is_file(), "{id:?}");
+            assert_eq!(report.session, id, "the report keeps the original id");
+        }
+        assert!(!tmp.path().join("escape.json").exists());
+        assert!(!home.join("escape.json").exists());
+        let written = std::fs::read_dir(archive_dir(&home, &CraftedId(MockCodec("mock"), "")))
+            .unwrap()
+            .count();
+        assert_eq!(written, 9, "one distinct file per id");
     }
 
     #[test]

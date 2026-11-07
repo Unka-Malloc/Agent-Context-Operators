@@ -10,7 +10,7 @@ description = "Pure schema planning and usage-record decoding for declared artif
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "=0.10.9"
+sha2.workspace = true
 
 [dev-dependencies]
 rusqlite = { version = "=0.40.2", features = ["bundled", "fallible_uint"] }
