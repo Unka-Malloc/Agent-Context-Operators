@@ -348,13 +348,16 @@ impl Codec for ClaudeCodec {
     }
 
     /// `~/.claude/projects/<cwd-slug>/<session_id>.jsonl` where the slug is
-    /// the session cwd with every `/` replaced by `-` (leading `-` kept):
-    /// `/Users/x/proj` → `-Users-x-proj`.
+    /// the session cwd with every character other than an ASCII letter,
+    /// digit or `-` replaced by `-` (leading `-` kept):
+    /// `/Users/x/proj` → `-Users-x-proj`. A cwd that is not a recorded
+    /// absolute path, or carries control characters or backslashes, lands
+    /// under `-acop-imported` instead.
     fn store_path(&self, home: &Path, conv: &Conversation) -> Result<PathBuf> {
         let slug = conv
             .cwd
             .as_deref()
-            .map(|cwd| cwd.replace('/', "-"))
+            .and_then(project_slug)
             .unwrap_or_else(|| "-acop-imported".to_string());
         Ok(home
             .join(".claude/projects")
@@ -394,6 +397,27 @@ impl Codec for ClaudeCodec {
             None
         }
     }
+}
+
+/// The recorded cwd reduced to one project-directory component, or `None`
+/// when the cwd cannot be trusted as a recorded absolute path. Backslashes
+/// and drive-relative prefixes are refused outright and every remaining
+/// separator, dot or colon becomes `-`, so the slug can never name a parent,
+/// a root or a second path component under `~/.claude/projects`.
+fn project_slug(cwd: &str) -> Option<String> {
+    if cwd.is_empty()
+        || cwd.len() > 4096
+        || cwd.contains('\\')
+        || cwd.chars().any(char::is_control)
+        || !acop::util::recorded_absolute(cwd)
+    {
+        return None;
+    }
+    Some(
+        cwd.chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect(),
+    )
 }
 
 /// The `user`/`assistant`/`tool_result`-user envelope every emitted record
@@ -729,6 +753,40 @@ mod tests {
             CODEC.store_path(Path::new("/home/u"), &conv).unwrap(),
             Path::new("/home/u/.claude/projects/-acop-imported/sess-abc.jsonl")
         );
+    }
+
+    #[test]
+    fn store_path_keeps_crafted_cwds_inside_the_projects_dir() {
+        let home = Path::new("/home/u");
+        let projects = home.join(".claude").join("projects");
+        let mut conv = Conversation::new("sess-abc");
+        for (cwd, slug) in [
+            // Backslashes and drive-relative prefixes never become a slug.
+            (r"..\..\..\escape", "-acop-imported"),
+            (r"C:..\..\escape", "-acop-imported"),
+            ("C:escape", "-acop-imported"),
+            (r"C:\Users\x\proj", "-acop-imported"),
+            (r"\\server\share\proj", "-acop-imported"),
+            (r"/Users/x\..\..\escape", "-acop-imported"),
+            ("relative/proj", "-acop-imported"),
+            ("../../escape", "-acop-imported"),
+            ("/Users/x/\u{0}proj", "-acop-imported"),
+            ("/Users/x/\nproj", "-acop-imported"),
+            ("", "-acop-imported"),
+            // Recorded absolutes collapse into one component.
+            ("/Users/x/../../escape", "-Users-x-------escape"),
+            ("/..", "---"),
+            ("C:/Users/x/proj", "C--Users-x-proj"),
+        ] {
+            conv.cwd = Some(cwd.into());
+            let path = CODEC.store_path(home, &conv).unwrap();
+            assert_eq!(path, projects.join(slug).join("sess-abc.jsonl"), "{cwd:?}");
+            assert_eq!(
+                path.parent().unwrap().parent().unwrap(),
+                projects,
+                "{cwd:?}"
+            );
+        }
     }
 
     #[test]
