@@ -215,7 +215,7 @@ fn history_roots_cover_card_and_platform_storage_variants() {
             .count(),
         1
     );
-    // The card's macOS roots plus the codec-declared appdata/xdg variants.
+    // The card declares the IDE stores under every platform home.
     assert!(kinds.contains(&(
         "cursor-workspace-storage",
         "{home}/Library/Application Support/Cursor/User/workspaceStorage"

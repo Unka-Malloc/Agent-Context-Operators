@@ -97,36 +97,12 @@ impl Codec for CursorCodec {
         "cursor"
     }
 
+    /// The card's complete history surface — CLI stores plus the IDE
+    /// stores under every platform home (`{home}/Library/Application
+    /// Support`, `{appdata}`, `{xdg_config}`); the descriptor stays the
+    /// single authority for where Cursor keeps conversations.
     fn history(&self) -> Vec<HistoryRoot> {
-        let mut roots = a4aa_cursor::card().history.to_vec();
-        // Cursor also keeps the same IDE stores under the Windows
-        // (`{appdata}`) and Linux (`{xdg_config}`) homes; the card declares
-        // only the macOS `{home}/Library/Application Support` pair. These
-        // are genuinely Cursor's own conversation stores, so the codec
-        // declares them itself.
-        roots.extend([
-            HistoryRoot {
-                path: "{appdata}/Cursor/User/workspaceStorage",
-                kind: "cursor-workspace-storage",
-                store: StoreKind::Directory,
-            },
-            HistoryRoot {
-                path: "{appdata}/Cursor/User/globalStorage",
-                kind: "cursor-global-storage",
-                store: StoreKind::Directory,
-            },
-            HistoryRoot {
-                path: "{xdg_config}/Cursor/User/workspaceStorage",
-                kind: "cursor-workspace-storage",
-                store: StoreKind::Directory,
-            },
-            HistoryRoot {
-                path: "{xdg_config}/Cursor/User/globalStorage",
-                kind: "cursor-global-storage",
-                store: StoreKind::Directory,
-            },
-        ]);
-        roots
+        a4aa_cursor::card().history.to_vec()
     }
 
     fn transcript_usage(&self) -> Option<acop::TranscriptUsage> {
