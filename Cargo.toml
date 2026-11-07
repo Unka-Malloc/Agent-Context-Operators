@@ -17,3 +17,9 @@ thiserror = "2"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
 sha2 = "=0.10.9"
+
+# The registry `a4aa-<agent>` cards build on `acop` themselves; resolving
+# that requirement to this workspace's crate keeps one `acop::store`
+# vocabulary in the graph, so a card's history is the codec's own type.
+[patch.crates-io]
+acop = { path = "crates/acop" }

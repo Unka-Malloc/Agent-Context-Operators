@@ -14,36 +14,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      # The workspace carries Cargo path dependencies on sibling checkouts:
-      # acop-antigravity consumes a4aa-antigravity, whose root crate resolves
-      # ahe and token-usage-detector from their own repositories.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          path: ACOP
-          persist-credentials: false
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          repository: Unka-Malloc/Adapters-for-All-Agents
-          path: Adapter-For-All-Agents
-          persist-credentials: false
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          repository: Unka-Malloc/Agent-Hook-Engine
-          path: Hook-Engine
-          persist-credentials: false
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          repository: Unka-Malloc/Metera
-          path: Metera
           persist-credentials: false
       - name: Rust toolchain
         run: rustup component add rustfmt clippy
       - name: Verify
         run: ./scripts/verify.sh
-        working-directory: ACOP
       - name: Package the tagged crate
         if: startsWith(github.ref, 'refs/tags/')
         env:
           TAG: ${{ github.ref_name }}
         run: cargo package --locked -p "${TAG%-v*}"
-        working-directory: ACOP

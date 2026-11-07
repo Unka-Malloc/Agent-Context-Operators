@@ -37,12 +37,7 @@ in this crate transmits conversation content anywhere.
 
 `scripts/verify.sh` — fmt + clippy + tests across the workspace.
 
-The workspace builds against one sibling checkout — Cargo path
-dependencies resolve it at the version `Cargo.toml` declares:
-
-| Path | Repository | Provides |
-| --- | --- | --- |
-| `../Adapter-For-All-Agents` | `Unka-Malloc/Adapters-for-All-Agents` | `a4aa`, `a4aa-<agent>` |
-
-Clone it beside this repository before building; a fresh clone without
-it cannot compile.
+The `a4aa-<agent>` descriptors resolve from crates.io at the versions
+`Cargo.toml` declares; a fresh clone builds on its own. The root
+`[patch.crates-io]` entry points the cards' own `acop` requirement at
+`crates/acop`, so the graph carries a single `acop::store` vocabulary.
