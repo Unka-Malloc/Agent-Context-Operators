@@ -168,6 +168,9 @@ acop snapshot restore <name> [--force] [--dry-run]
 `~/.local/state/acop/snapshots/<ts>-<rand>/` plus a `manifest.json`
 recording each file's source. `restore` copies them back; an existing
 target refuses unless `--force` — the target is itself user data.
+`<name>` must be one snapshot directory directly under `snapshots/`, and
+every stored file must resolve inside it; the recorded sources are the
+write targets the operator approves by naming the snapshot.
 Snapshots are local copies only; nothing is uploaded or deduplicated.
 
 ## stores / capabilities
