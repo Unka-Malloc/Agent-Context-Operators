@@ -195,6 +195,13 @@ fn encode_roundtrip_and_store_path() {
     let home = tmp.path();
     let target = codec.store_path(home, &conv).unwrap();
     assert_eq!(target, home.join(".dsh/sessions/proj/sess-1/session.jsonl"));
+
+    // Imports land in the store discovery scans: `DSH_HOME` relocates both.
+    let dsh_home = tmp.path().join("relocated-dsh");
+    std::env::set_var("DSH_HOME", &dsh_home);
+    let target = codec.store_path(home, &conv).unwrap();
+    std::env::remove_var("DSH_HOME");
+    assert_eq!(target, dsh_home.join("sessions/proj/sess-1/session.jsonl"));
 }
 
 #[test]

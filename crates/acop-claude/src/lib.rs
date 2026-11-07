@@ -347,7 +347,9 @@ impl Codec for ClaudeCodec {
         Ok(Encoded { lines, projection })
     }
 
-    /// `~/.claude/projects/<cwd-slug>/<session_id>.jsonl` where the slug is
+    /// `<claude-project-transcripts root>/<cwd-slug>/<session_id>.jsonl` —
+    /// the root is the card's declared store (`~/.claude/projects`) as
+    /// `expand_root` resolves it — where the slug is
     /// the session cwd with every character other than an ASCII letter,
     /// digit or `-` replaced by `-` (leading `-` kept):
     /// `/Users/x/proj` → `-Users-x-proj`. A cwd that is not a recorded
@@ -359,10 +361,13 @@ impl Codec for ClaudeCodec {
             .as_deref()
             .and_then(project_slug)
             .unwrap_or_else(|| "-acop-imported".to_string());
-        Ok(home
-            .join(".claude/projects")
-            .join(slug)
-            .join(format!("{}.jsonl", conv.session_id)))
+        let root = self
+            .history()
+            .into_iter()
+            .find(|root| root.kind == "claude-project-transcripts")
+            .map(|root| self.expand_root(&root, home))
+            .ok_or_else(|| Error::Usage("claude session root undeclared".to_string()))?;
+        Ok(root.join(slug).join(format!("{}.jsonl", conv.session_id)))
     }
 
     fn redact_line(&self, line: &Value, marker: &str) -> Option<Value> {
@@ -758,7 +763,13 @@ mod tests {
     #[test]
     fn store_path_keeps_crafted_cwds_inside_the_projects_dir() {
         let home = Path::new("/home/u");
-        let projects = home.join(".claude").join("projects");
+        let declared = CODEC
+            .history()
+            .into_iter()
+            .find(|root| root.kind == "claude-project-transcripts")
+            .unwrap();
+        let projects = CODEC.expand_root(&declared, home);
+        assert_eq!(projects, home.join(".claude").join("projects"));
         let mut conv = Conversation::new("sess-abc");
         for (cwd, slug) in [
             // Backslashes and drive-relative prefixes never become a slug.

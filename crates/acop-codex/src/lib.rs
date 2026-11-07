@@ -382,16 +382,23 @@ impl Codec for CodexCodec {
         Ok(Encoded { lines, projection })
     }
 
-    /// `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<uuid>.jsonl`
+    /// `<codex-session-store root>/<YYYY>/<MM>/<DD>/rollout-<ts>-<uuid>.jsonl`
+    /// — the root is the card's declared store (`~/.codex/sessions`) as
+    /// `expand_root` resolves it.
     fn store_path(&self, home: &Path, conv: &Conversation) -> Result<PathBuf> {
+        let root = self
+            .history()
+            .into_iter()
+            .find(|root| root.kind == "codex-session-store")
+            .map(|root| self.expand_root(&root, home))
+            .ok_or_else(|| Error::Usage("codex session root undeclared".to_string()))?;
         let today = acop::util::today();
         let (y, m, d) = (&today[0..4], &today[5..7], &today[8..10]);
         let stamp = acop::util::now_rfc3339()
             .replace(':', "-")
             .trim_end_matches('Z')
             .to_string();
-        Ok(home
-            .join(".codex/sessions")
+        Ok(root
             .join(y)
             .join(m)
             .join(d)

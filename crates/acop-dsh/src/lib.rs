@@ -240,7 +240,8 @@ impl Codec for DshCodec {
     }
 
     /// Imported sessions land as a fresh plain-text generation under the
-    /// session-store layout. The `<project>` segment is the recorded
+    /// session-store layout, below the declared store root as
+    /// `expand_root` resolves it (`DSH_HOME` included). The `<project>` segment is the recorded
     /// working directory's own name when the store knows one — the
     /// directory segments carry no schema weight, only grouping.
     fn store_path(&self, home: &Path, conversation: &Conversation) -> Result<PathBuf> {
@@ -252,8 +253,13 @@ impl Codec for DshCodec {
             .map(|name| name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "-"))
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "imported".to_string());
-        Ok(home
-            .join(".dsh/sessions")
+        let root = self
+            .history()
+            .into_iter()
+            .find(|root| root.kind == "deepseek-harness-session-store")
+            .map(|root| self.expand_root(&root, home))
+            .ok_or_else(|| Error::Usage("dsh session root undeclared".to_string()))?;
+        Ok(root
             .join(project)
             .join(&conversation.session_id)
             .join("session.jsonl"))
